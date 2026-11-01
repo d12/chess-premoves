@@ -22,9 +22,15 @@ DEFAULT_QUEUE = Path(os.environ.get("PPZ_QUEUE", "review_queue.jsonl"))
 DEFAULT_DB = Path(os.environ.get("PPZ_DB", "puzzles.json"))
 
 
-def review_block(d: dict) -> dict:
-    """The exact block shown to the developer for manual validation."""
-    return {"fen": d["fen"], "url": chesscom_url(d["fen"]), "number_of_moves": d["n"]}
+def review_block(d: dict, with_solution: bool = True) -> dict:
+    """The block shown to the developer for manual validation.
+
+    `solution` is one shortest premove sequence in SAN, e.g. ["Rc1", "Qb2", "Ra1"].
+    """
+    block = {"fen": d["fen"], "url": chesscom_url(d["fen"]), "number_of_moves": d["n"]}
+    if with_solution:
+        block["solution"] = d["plan_san"]
+    return block
 
 
 class Queue:

@@ -98,9 +98,22 @@ on a 3090. The CPU and CUDA builders share the same per-position code
 | `--details` | also print solutions and score breakdowns |
 | `--workers` | parallel workers (default: one per core) |
 
-Output is the review block you asked for (`fen`, chess.com `url` with the FEN URL-encoded,
-`number_of_moves`). The queue entry also stores the solution, the full analysis and the
-score breakdown, which `ppz review` shows.
+Each puzzle is printed as a review block:
+
+```json
+{
+  "fen": "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1",
+  "url": "https://www.chess.com/analysis?fen=8%2F8%2F2k5%2F8%2F8%2F8%2F3Q4%2F4R2K+w+-+-+0+1",
+  "number_of_moves": 3,
+  "solution": ["Rc1", "Qb2", "Ra1"]
+}
+```
+
+`solution` is one shortest premove sequence (when several exist, the analysis says how
+many). The queue entry also stores the full analysis and score breakdown, which
+`ppz review` shows; there the solution stays hidden until you press `s`. `ppz db export`
+keeps its default fields (`fen,url,number_of_moves`); add `solution` with
+`--fields fen,url,number_of_moves,solution`.
 
 Files: `review_queue.jsonl` and `puzzles.json` in the current directory by default
 (override with `--queue` / `--db` or `PPZ_QUEUE` / `PPZ_DB`).

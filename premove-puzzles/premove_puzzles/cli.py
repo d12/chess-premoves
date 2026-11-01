@@ -14,6 +14,7 @@ import collections
 import json
 import os
 import queue as queue_mod
+import re
 import sys
 import time
 import tomllib
@@ -62,7 +63,14 @@ def err(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
-def describe(d: dict, sc: Scored | None = None, reveal: bool = True) -> str:
+def pretty(obj) -> str:
+    """Indented JSON, but with move lists kept on one line: "solution": ["Rc1", "Qb2", "Ra1"]."""
+    text = json.dumps(obj, indent=2)
+    return re.sub(r'\[\s+((?:"[^"]*",?\s*)+)\]',
+                  lambda m: "[" + ", ".join(re.findall(r'"[^"]*"', m.group(1))) + "]", text)
+
+
+def describe(d: dict, sc: Scored | None = None, reveal: bool = True, solution_line: bool = True) -> str:
     lines = []
     tax = d.get("premove_tax", 0)
     head = f"{d['material']}  ·  {d['n']} premoves"
@@ -73,8 +81,9 @@ def describe(d: dict, sc: Scored | None = None, reveal: bool = True) -> str:
         head = f"score {sc.score:>5.1f}  ·  " + head
     lines.append(head)
     if reveal:
-        plan = "  ".join(f"{i + 1}.{m}" for i, m in enumerate(d["plan_san"]))
-        lines.append(f"solution: {plan}")
+        if solution_line:  # skipped when the JSON block above already shows the solution
+            plan = "  ".join(f"{i + 1}.{m}" for i, m in enumerate(d["plan_san"]))
+            lines.append(f"solution: {plan}")
         widths = "→".join(str(s["belief"]) for s in d["steps"])
         lines.append(f"positions tracked per move: {widths}   moved: {d['moved_types']}   mate by: {d['mate_pieces']}")
     else:
@@ -196,11 +205,11 @@ def cmd_generate(a):
         Queue(a.queue).append(entries)
     if a.details:
         for e, sc in zip(entries, picked):
-            print(json.dumps(review_block(sc.data), indent=2))
-            print(describe(sc.data, sc))
+            print(pretty(review_block(sc.data)))
+            print(describe(sc.data, sc, solution_line=False))
             print()
     else:
-        print(json.dumps(out, indent=2))
+        print(pretty(out))
     if not out:
         err("no puzzles found; try more --minutes, a lower --min-moves, or other --material")
     elif not a.dry_run:
@@ -222,8 +231,8 @@ def cmd_solve(a):
         print(f"no premove mate within {a.max_moves} moves"
               + (f" (ordinary mate in {d['closed']})" if d.get("closed") else ""))
         sys.exit(1)
-    print(json.dumps(review_block(d), indent=2))
-    print(describe(d, score(d)))
+    print(pretty(review_block(d)))
+    print(describe(d, score(d), solution_line=False))
     ok, why = verify_plan(d["fen"], d["plan_uci"])
     print(f"independent verification: {'OK' if ok else 'FAILED'} ({why})")
 
@@ -243,8 +252,8 @@ def cmd_review(a):
         reveal = a.show_solutions
         while True:
             print(f"── [{i + 1}/{len(pending)}] " + "─" * 50)
-            print(json.dumps(review_block(d), indent=2))
-            print(describe(d, sc, reveal=reveal))
+            print(pretty(review_block(d, with_solution=reveal)))
+            print(describe(d, sc, reveal=reveal, solution_line=False))
             try:
                 c = input("[a]ccept [r]eject [s]olution [o]pen [v]erify [n]ext [q]uit > ").strip().lower()
             except EOFError:
