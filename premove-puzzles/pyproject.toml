@@ -1,0 +1,16 @@
+[project]
+name = "premove-puzzles"
+version = "0.1.0"
+description = "Find, score and curate premove chess puzzles"
+requires-python = ">=3.11"
+dependencies = ["chess>=1.10"]
+
+[project.scripts]
+ppz = "premove_puzzles.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["premove_puzzles"]

@@ -1,0 +1,8 @@
+engine/pmcore
+engine/tbgen
+engine/tbgen_cuda
+tables/
+__pycache__/
+review_queue.jsonl
+puzzles.json
+*.tmp

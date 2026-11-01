@@ -1,0 +1,35 @@
+# Tuning knobs for `ppz`. Every value here has a built-in default; delete what you don't need.
+
+[generate]
+# Material signatures to sample, white-black. Optional ":weight" sets sampling frequency.
+# P = pawn. Black pawns add "terrain" (self-blocks, shelters) without exploding the search.
+material = [
+  "KQR-K", "KRR-K", "KRB-K", "KRN-K", "KQB-K", "KQN-K", "KRBN-K:0.6",
+  "KQ-KP", "KQ-KPP", "KR-KP", "KRB-KP", "KQR-KP", "KQN-KP:0.6",
+  "KRP-K:0.6", "KQP-K:0.6", "KBBN-K:0.4", "KQQ-K:0.3",
+]
+max_moves = 6
+workers = 0        # 0 = one per CPU core
+
+[archive]
+per_cell = 2           # best puzzles kept per descriptor cell
+dup_threshold = 0.6    # solution similarity at which two puzzles count as "the same idea"
+
+[weights]
+# See premove_puzzles/quality.py for what each feature means.
+length = 1.0
+premove_tax = 2.0
+unique_solution = 2.0
+solutions_log = -0.6
+unique_key = 0.75
+quiet_fraction = 1.5
+quiet_key = 1.0
+offer = 1.0
+width_log = 0.3
+distinct_movers = 0.4
+mate_variety = 0.3
+economy = -0.3
+redundant_white = -1.5
+redundant_black = -0.75
+black_obstacle = 0.5
+engine_trap = 1.0
