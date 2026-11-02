@@ -64,6 +64,44 @@ static std::string typesStr(int mask) {
 }
 
 // --------------------------------------------------------------------------- position helpers
+// Material that can arise in a real game: per side at most 16 pieces and 8 pawns, and every
+// piece beyond the starting set (2nd queen, 3rd rook/knight, 2nd bishop on one square colour)
+// needs a promotion, i.e. a missing pawn. Newer Stockfish versions refuse other positions,
+// and they look wrong to players anyway.
+// `piece(sq)` returns the FEN letter on square sq (0 = a1) or '.'.
+template <class PieceAt>
+static const char* unreachableMaterial(PieceAt piece) {
+    int pawns[2] = {0}, total[2] = {0}, knights[2] = {0}, rooks[2] = {0}, queens[2] = {0}, light[2] = {0},
+        dark[2] = {0};
+    for (int sq = 0; sq < 64; ++sq) {
+        char c = piece(sq);
+        if (c == '.') continue;
+        int side = isupper(c) ? 0 : 1;
+        total[side]++;
+        switch (toupper(c)) {
+            case 'P': pawns[side]++; break;
+            case 'N': knights[side]++; break;
+            case 'R': rooks[side]++; break;
+            case 'Q': queens[side]++; break;
+            case 'B': (((sq & 7) + (sq >> 3)) & 1 ? light : dark)[side]++; break;
+        }
+    }
+    static const char* msg[2][3] = {{"impossible material: White has more than 16 pieces",
+                                     "impossible material: White has more than 8 pawns",
+                                     "impossible material: White has more promoted pieces than missing pawns"},
+                                    {"impossible material: Black has more than 16 pieces",
+                                     "impossible material: Black has more than 8 pawns",
+                                     "impossible material: Black has more promoted pieces than missing pawns"}};
+    for (int side = 0; side < 2; ++side) {
+        int promoted = std::max(0, queens[side] - 1) + std::max(0, rooks[side] - 2) + std::max(0, knights[side] - 2) +
+                       std::max(0, light[side] - 1) + std::max(0, dark[side] - 1);
+        if (total[side] > 16) return msg[side][0];
+        if (pawns[side] > 8) return msg[side][1];
+        if (promoted > 8 - pawns[side]) return msg[side][2];
+    }
+    return nullptr;
+}
+
 static bool validPuzzlePos(const Board& b, std::string* why = nullptr) {
     auto fail = [&](const char* w) {
         if (why) *why = w;
@@ -76,8 +114,13 @@ static bool validPuzzlePos(const Board& b, std::string* why = nullptr) {
     Bitboard back = Rank(Rank::RANK_1).bb() | Rank(Rank::RANK_8).bb();
     if (b.pieces(PieceType::PAWN) & back) return fail("pawn on back rank");
     if (b.isAttacked(b.kingSq(Color::BLACK), Color::WHITE)) return fail("black is in check with white to move");
-    if (b.pieces(PieceType::PAWN, Color::WHITE).count() > 8 || b.pieces(PieceType::PAWN, Color::BLACK).count() > 8)
-        return fail("too many pawns");
+    if (const char* m = unreachableMaterial([&](int sq) {
+            Piece p = b.at(Square(sq));
+            if (p == Piece::NONE) return '.';
+            char c = "pnbrqk"[pti(p.type())];
+            return p.color() == Color::WHITE ? (char)toupper(c) : c;
+        }))
+        return fail(m);
     return true;
 }
 
@@ -685,35 +728,43 @@ class Generator {
     // solution but makes positions look like real games. Mostly locked pawn pairs (a white
     // pawn with a black pawn directly in front: neither can move, so they cost the search
     // almost nothing), plus some loose pawns and the occasional extra minor piece.
+    static bool reachable(const Grid& g) {
+        return unreachableMaterial([&](int sq) { return g.c[sq]; }) == nullptr;
+    }
+
     bool pad(Grid& g) {
         if (O.minPieces <= 0) return true;
         int have = pieceCount(g);
         int target = O.minPieces + rnd(std::max(1, std::min(O.maxPieces, O.minPieces + 2) - O.minPieces + 1));
         if (have > O.maxPieces) return false;
-        for (int tries = 0; have < target && tries < 60; ++tries) {
+        for (int tries = 0; have < target && tries < 80; ++tries) {
             double x = uni(rng);
+            int a = -1, b = -1;   // squares filled by this step
+            char ca = 0, cb = 0;
             if (x < 0.55 && have + 2 <= O.maxPieces) {  // locked pair: P on ranks 2-6, p right in front
-                int s = (1 + rnd(5)) * 8 + rnd(8);
-                if (g.c[s] != '.' || g.c[s + 8] != '.') continue;
-                g.c[s] = 'P';
-                g.c[s + 8] = 'p';
-                have += 2;
+                a = (1 + rnd(5)) * 8 + rnd(8);
+                b = a + 8;
+                ca = 'P';
+                cb = 'p';
             } else if (x < 0.75) {  // black pawn, ranks 5-7 (several moves from promoting)
-                int s = (4 + rnd(3)) * 8 + rnd(8);
-                if (g.c[s] != '.') continue;
-                g.c[s] = 'p';
-                have++;
+                a = (4 + rnd(3)) * 8 + rnd(8);
+                ca = 'p';
             } else if (x < 0.88) {  // white pawn, ranks 2-4
-                int s = (1 + rnd(3)) * 8 + rnd(8);
-                if (g.c[s] != '.') continue;
-                g.c[s] = 'P';
-                have++;
+                a = (1 + rnd(3)) * 8 + rnd(8);
+                ca = 'P';
             } else {  // a minor piece for either side
-                int s = anySquare(g);
-                if (s < 0) continue;
-                g.c[s] = (uni(rng) < 0.5) ? "NB"[rnd(2)] : "nb"[rnd(2)];
-                have++;
+                a = anySquare(g);
+                ca = (uni(rng) < 0.5) ? "NB"[rnd(2)] : "nb"[rnd(2)];
             }
+            if (a < 0 || g.c[a] != '.' || (b >= 0 && g.c[b] != '.')) continue;
+            g.c[a] = ca;
+            if (b >= 0) g.c[b] = cb;
+            if (!reachable(g)) {  // e.g. a third knight with all eight pawns still on the board
+                g.c[a] = '.';
+                if (b >= 0) g.c[b] = '.';
+                continue;
+            }
+            have += (b >= 0) ? 2 : 1;
         }
         return have >= O.minPieces && have <= O.maxPieces;
     }
