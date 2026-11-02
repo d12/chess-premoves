@@ -58,10 +58,10 @@ completed ones in the browser (`perfectedIds`); progress saved before this featu
 ## Puzzles
 
 Puzzles live in `src/game/puzzles.json` and are numbered 1..N; each unlocks when the one
-before it is completed. Manage them with the generator in `premove-puzzles/`:
+before it is completed. Manage them with the generator in `puzzle-finder/`:
 
 ```sh
-cd premove-puzzles
+cd puzzle-finder
 ./ppz app list                                   # what the app has
 ./ppz app add "FEN"                              # append as the next puzzle
 ./ppz app add "FEN" --number 4                   # replace puzzle 4 (or add it if 4 is next)
@@ -76,10 +76,14 @@ puzzle in the file: numbering, that its solution can be entered on the planning 
 that it beats the opponent in a real game. Completion is stored per puzzle number in the
 browser, so replacing or inserting puzzles shifts what players see as completed.
 
+The `puzzle-finder/` directory contains the standalone finder, its native engine and
+supporting files. Its `premove_puzzles/` subdirectory is the Python package used by `ppz`;
+its import name remains unchanged. See `puzzle-finder/README.md` for setup.
+
 ## Premove-aware opponent (WebAssembly)
 
 Because the player submits every premove before play starts, the opponent knows the whole
-plan. `src/engine/premoveOpponent.js` uses the C++ engine from `premove-puzzles/engine`,
+plan. `src/engine/premoveOpponent.js` uses the C++ engine from `puzzle-finder/engine`,
 compiled to WebAssembly, to search the opponent's replies against that fixed plan:
 
 * if any reply sequence beats the plan (a premove becomes illegal, the premoves run out,
@@ -110,7 +114,7 @@ will not start.
 
 ### When to rebuild
 
-Only when the opponent's C++ sources change: `premove-puzzles/engine/src/refute.hpp`,
+Only when the opponent's C++ sources change: `puzzle-finder/engine/src/refute.hpp`,
 `refute_api.hpp`, `engine/wasm/premove_wasm.cpp`, `engine/vendor/chess.hpp` or the
 `engine/Makefile` flags. Puzzles, JS/CSS and the rest of `ppz` do not need it.
 `npm run build:wasm` records a fingerprint of those sources next to the module

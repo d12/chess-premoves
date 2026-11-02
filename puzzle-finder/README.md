@@ -4,6 +4,10 @@ Finds chess positions where white can **premove** a fixed sequence of moves that
 checkmates black no matter how black replies, scores them for interest, keeps the batch
 varied, and moves the ones you approve into a puzzle database.
 
+This `puzzle-finder/` directory contains the finder, its native engine, and supporting
+files. `premove_puzzles/` is the Python package used by `ppz` (and keeps its existing
+import name).
+
 ```
 ./ppz generate --min-moves 4 --pieces knight --count 10 --minutes 3
 ./ppz review
@@ -13,11 +17,28 @@ varied, and moves the ones you approve into a puzzle database.
 ## Setup
 
 Needs Python 3.11+, a C++17 compiler (`g++` or `clang++`) and, ideally, Stockfish.
+Run the commands below from `puzzle-finder/`.
+
+Set up the local Python environment once:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+`./ppz` automatically uses `.venv/bin/python` when `.venv` exists, without activating
+it in your shell. If there is no `.venv`, it uses `python3` from your PATH instead;
+that Python must have the dependencies installed. This applies to `./ppz`, not other
+Python commands or an independently installed `ppz` on your PATH.
+
+If upgrading from the old `premove-puzzles/` directory, move any local untracked data
+you want to keep into `puzzle-finder/`. Recreate any virtual environment there and
+reinstall its dependencies: virtual environments are not portable across directory
+renames. Reinstall any editable `ppz` installation from the new directory as well.
 
 **MacBook (Apple Silicon or Intel)**
 ```
 xcode-select --install           # clang + make, if not already there
-pip install chess
 brew install stockfish           # optional, speeds up material that tables don't cover
 ./ppz info                       # shows what was detected
 ./ppz tables build               # one-time: 3-4 piece mate tables on CPU (~1-3 min)
@@ -27,7 +48,6 @@ brew install stockfish           # optional, speeds up material that tables don'
 **Ubuntu with an NVIDIA GPU (e.g. RTX 3090)**
 ```
 sudo apt install build-essential stockfish nvidia-cuda-toolkit   # or NVIDIA's own CUDA toolkit
-pip install chess
 ./ppz info                       # should list the GPU and "table device cuda"
 ./ppz tables build               # builds on the GPU, including the 5-piece tables
 ```
@@ -37,7 +57,8 @@ For other GPUs set the architecture when building: `make -C engine cuda CUDA_ARC
 Tables are plain files in `tables/` (or `$PPZ_TABLES`) and are identical whichever device
 built them, so you can build on the 3090 box and copy the folder to the Mac.
 
-Or `pip install -e .` to get `ppz` on your PATH. Stockfish is found on PATH, in the usual
+Install the package into your preferred Python environment to get `ppz` on your PATH.
+Stockfish is found on PATH, in the usual
 install locations, via `$STOCKFISH`, or `--stockfish PATH`.
 
 ## Hardware: what runs where

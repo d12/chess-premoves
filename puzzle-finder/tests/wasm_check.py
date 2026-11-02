@@ -8,7 +8,7 @@ for another legal premove, two moves exchanged), then checks for every case that
      python-chess implementation;
   3. a "refuted" principal line really defeats the plan, and a "sound" one ends in mate.
 
-usage (from premove-puzzles/):  python3 tests/wasm_check.py [--seconds 20] [--module PATH]
+usage (from puzzle-finder/):  python3 tests/wasm_check.py [--seconds 20] [--module PATH]
 needs: make (native pmcore), node, and the built module (npm run build:wasm at repo root).
 """
 from __future__ import annotations

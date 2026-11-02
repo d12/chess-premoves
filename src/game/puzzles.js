@@ -1,5 +1,5 @@
-// Puzzle list. The data lives in puzzles.json, which is managed with the premove-puzzles
-// tool (`./ppz app list | add | remove`, see premove-puzzles/README.md). Ids are "1".."N"
+// Puzzle list. The data lives in puzzles.json, which is managed with the puzzle-finder
+// tool (`./ppz app list | add | remove`, see puzzle-finder/README.md). Ids are "1".."N"
 // and puzzles unlock in that order.
 import PUZZLE_DATA from "./puzzles.json" with { type: "json" };
 

@@ -15,7 +15,7 @@ We are building a chess practice game focused on vision. Each puzzle presents a 
 
 ## Opponent AI
 
-- The opponent knows the player's whole premove list (it is submitted before play starts) and plays the defence that beats it if one exists, choosing the one that ends the game soonest; otherwise it plays the defence that survives longest. It is our own engine (`premove-puzzles/engine/src/refute.hpp`) compiled to WebAssembly and bundled with the app, so there is nothing to download. (This replaced Stockfish, which plays good chess but does not look for the reply that breaks a premove plan.)
+- The opponent knows the player's whole premove list (it is submitted before play starts) and plays the defence that beats it if one exists, choosing the one that ends the game soonest; otherwise it plays the defence that survives longest. It is our own engine (`puzzle-finder/engine/src/refute.hpp`) compiled to WebAssembly and bundled with the app, so there is nothing to download. (This replaced Stockfish, which plays good chess but does not look for the reply that breaks a premove plan.)
 - The engine should be able to respond to moves quickly, ideally within 500ms, to maintain a smooth gameplay experience.
 - The engine should be able to handle all standard chess rules, including castling, en passant, and promotion.
 

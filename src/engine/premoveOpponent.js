@@ -1,7 +1,7 @@
 // Premove-aware opponent.
 //
 // The player submits every premove before play starts, so the opponent knows the whole plan.
-// The WebAssembly engine (premove-puzzles/engine, built with `npm run build:wasm`) searches
+// The WebAssembly engine (puzzle-finder/engine, built with `npm run build:wasm`) searches
 // the opponent's replies against that fixed plan and picks:
 //   * a refutation when one exists (makes a premove illegal, outlasts the premoves, forces a
 //     draw, or mates the player), choosing the one that ends the game soonest;

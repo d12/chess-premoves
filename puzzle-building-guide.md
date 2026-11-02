@@ -1,12 +1,12 @@
 # Puzzle building guide
 
 How to find new premove puzzles and put them in the game. Run all `ppz` commands from the
-`premove-puzzles/` folder.
+`puzzle-finder/` folder.
 
 ## One-time setup
 
 ```sh
-cd premove-puzzles
+cd puzzle-finder
 python3 -m venv .venv && source .venv/bin/activate && pip install chess
 brew install stockfish          # optional, makes generation faster
 ./ppz tables build              # 1–2 minutes; makes generation several times faster
@@ -19,7 +19,7 @@ In every new Terminal window, run `source .venv/bin/activate` again first.
 
 | file | what it is | written by |
 |---|---|---|
-| `premove-puzzles/puzzles.json` | your **shortlist** of puzzles you accepted in review | `ppz review`, `ppz add` |
+| `puzzle-finder/puzzles.json` | your **shortlist** of puzzles you accepted in review | `ppz review`, `ppz add` |
 | `src/game/puzzles.json` | the **game's** levels, numbered 1..N | `ppz app` only |
 
 Nothing reaches the game until you run `ppz app add`.

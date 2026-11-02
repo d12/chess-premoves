@@ -12,11 +12,11 @@ import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 
 export const WASM_SOURCES = [
-  "premove-puzzles/engine/wasm/premove_wasm.cpp",
-  "premove-puzzles/engine/src/refute.hpp",
-  "premove-puzzles/engine/src/refute_api.hpp",
-  "premove-puzzles/engine/vendor/chess.hpp",
-  "premove-puzzles/engine/Makefile", // build flags
+  "puzzle-finder/engine/wasm/premove_wasm.cpp",
+  "puzzle-finder/engine/src/refute.hpp",
+  "puzzle-finder/engine/src/refute_api.hpp",
+  "puzzle-finder/engine/vendor/chess.hpp",
+  "puzzle-finder/engine/Makefile", // build flags
 ];
 export const MODULE_FILE = "src/engine/generated/premove-engine.js";
 export const STAMP_FILE = "src/engine/generated/premove-engine.sources.sha256";
