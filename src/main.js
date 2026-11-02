@@ -111,7 +111,6 @@ function renderIndex() {
     const perfected = state.progressStore.isPerfected(puzzle.id);
     const unlocked = state.progressStore.isUnlocked(puzzle.id);
     const status = perfected ? "Perfected" : completed ? "Completed" : unlocked ? "Ready to play" : "Locked";
-    const minimum = puzzle.number_of_moves ? ` · ${plural(puzzle.number_of_moves, "move")}` : "";
     return `
       <button
         class="level-card ${perfected ? "is-perfect" : completed ? "is-complete" : ""} ${unlocked ? "" : "is-locked"}"
@@ -119,12 +118,12 @@ function renderIndex() {
         data-action="open-puzzle"
         data-puzzle-id="${puzzle.id}"
         ${unlocked ? "" : "disabled"}
-        aria-label="Level ${puzzle.id}, ${status}${puzzle.number_of_moves ? `, perfect in ${plural(puzzle.number_of_moves, "premove")}` : ""}"
+        aria-label="Level ${puzzle.id}, ${status}"
       >
         <span class="level-number">${puzzle.id}</span>
         <span class="level-mark" aria-hidden="true">${perfected ? "★" : completed ? "✓" : unlocked ? "→" : "•"}</span>
         <span class="level-title">LEVEL ${puzzle.id}</span>
-        <span class="level-status">${status}${minimum}</span>
+        <span class="level-status">${status}</span>
       </button>
     `;
   }).join("");
