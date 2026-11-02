@@ -26,7 +26,8 @@ def ensure_binary(name: str = "pmcore") -> Path:
     """Build an engine binary on first use (pmcore, tbgen, or tbgen_cuda)."""
     binary = ENGINE_DIR / name
     deps = [ENGINE_DIR / "src" / f for f in ("pmcore.cpp", "solver.hpp", "tb_core.h", "tb_driver.h",
-                                             "tb_probe.h", "tbgen.cpp", "tbgen_cuda.cu")]
+                                             "tb_probe.h", "tbgen.cpp", "tbgen_cuda.cu", "refute.hpp",
+                                             "refute_api.hpp")]
     if binary.exists() and all(binary.stat().st_mtime >= d.stat().st_mtime for d in deps if d.exists()):
         return binary
     print(f"building {name} (one time)...", flush=True)

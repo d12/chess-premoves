@@ -1,5 +1,6 @@
 import { Chess } from "chess.js";
 import { createStockfishEngine } from "./engine/stockfish.js";
+import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import { createPremoveGame } from "./game/session.js";
 import { getPuzzle, PUZZLES } from "./game/puzzles.js";
 import { createProgressStore } from "./game/progress.js";
@@ -23,6 +24,7 @@ const pieceNames = {
 const state = {
   screen: "loading",
   engine: null,
+  premoveEngine: null,
   engineProgress: null,
   error: null,
   progressStore: null,
@@ -446,16 +448,24 @@ async function initializeApp() {
     if (!state.progressStore) {
       state.progressStore = createProgressStore();
     }
-    state.engine = await createStockfishEngine({
-      onProgress(progress) {
-        state.engineProgress = progress;
-        render();
-      },
-    });
+    // The premove-aware opponent (WebAssembly, bundled) plays the games; Stockfish stays
+    // as its fallback for plans too large to search exhaustively.
+    const [stockfish, premoveEngine] = await Promise.all([
+      createStockfishEngine({
+        onProgress(progress) {
+          state.engineProgress = progress;
+          render();
+        },
+      }),
+      loadPremoveEngine(),
+    ]);
+    state.engine = stockfish;
+    state.premoveEngine = premoveEngine;
     state.screen = "index";
     render();
   } catch (error) {
     state.engine = null;
+    state.premoveEngine = null;
     state.error = error;
     state.screen = "error";
     render();
@@ -539,7 +549,14 @@ async function submitPremoves() {
   state.interactionError = "";
   state.executionError = "";
   try {
-    await state.session.play(state.engine, {
+    // The opponent knows the whole submitted plan and plays the strongest defence against it.
+    const opponent = createPremoveOpponent({
+      engine: state.premoveEngine,
+      puzzleFen: state.puzzle.fen,
+      premoves: state.session.snapshot().premoves,
+      fallback: state.engine,
+    });
+    await state.session.play(opponent, {
       delayMs: 1_000,
       onUpdate(snapshot) {
         const previousMove = state.snapshot?.lastMove;

@@ -20,6 +20,7 @@
 #include <sstream>
 #include <unordered_set>
 
+#include "refute_api.hpp"
 #include "solver.hpp"
 
 using namespace pm;
@@ -903,6 +904,24 @@ int main(int argc, char** argv) {
             if (f.size() > 5 && !f[5].empty()) rq.nodes = std::stoll(f[5]);
             Result R;
             std::cout << analyze(S, rq, R) << "\n" << std::flush;
+        }
+        return 0;
+    }
+    if (mode == "refute") {
+        // One request per line, same API as the WebAssembly build:
+        //   analyze<TAB>FEN<TAB>premoves[<TAB>nodes]
+        //   reply<TAB>FEN<TAB>premoves<TAB>history[<TAB>nodes]
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            if (line.empty()) continue;
+            auto f = split(line, '\t');
+            if (f[0] == "analyze" && f.size() >= 3)
+                std::cout << pm::analyzePlan(f[1], f[2], f.size() > 3 ? std::stoll(f[3]) : 2000000) << "\n";
+            else if (f[0] == "reply" && f.size() >= 4)
+                std::cout << pm::chooseReply(f[1], f[2], f[3], f.size() > 4 ? std::stoll(f[4]) : 2000000) << "\n";
+            else
+                std::cout << pm::apiError("bad request") << "\n";
+            std::cout << std::flush;
         }
         return 0;
     }

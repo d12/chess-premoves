@@ -10,7 +10,9 @@
     "build": "vite build",
     "prepreview": "node scripts/prepare-engine-assets.js",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "build:wasm": "make -C premove-puzzles/engine wasm",
+    "check:wasm": "python3 premove-puzzles/tests/wasm_check.py"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

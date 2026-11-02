@@ -118,6 +118,22 @@ keeps its default fields (`fen,url,number_of_moves`); add `solution` with
 Files: `review_queue.jsonl` and `puzzles.json` in the current directory by default
 (override with `--queue` / `--db` or `PPZ_QUEUE` / `PPZ_DB`).
 
+## Browser opponent (WebAssembly)
+
+`engine/src/refute.hpp` finds the opponent's best defence against a known premove list
+(the game's opponent; see the top-level README). It uses only the move generator, so it
+builds natively and to WebAssembly from the same source:
+
+```
+make -C engine wasm                       # needs em++ (Emscripten); output: ../src/engine/generated/
+printf 'analyze\t<FEN>\t<uci premoves>\n' | engine/pmcore refute     # native, same JSON API
+python3 tests/wasm_check.py               # WebAssembly == native == python verifier on fresh puzzles
+```
+
+Its outcome rules mirror the game exactly (chess.js draw rules: stalemate, insufficient
+material, 50 moves, threefold repetition). Repetition is tracked only when the plan returns
+a white piece set-up to an earlier one, which is the only way it can occur.
+
 ## Rules the solver implements
 
 * White moves first; a premove is `(from, to, promotion)`, exactly like a UI premove.
