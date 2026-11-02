@@ -106,6 +106,33 @@ test("the three-move premove line wins after two legal opponent replies", async 
   assert.equal(new Chess(result.fen).isCheckmate(), true);
 });
 
+test("playback waits startDelayMs on the starting position before the first move", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2b2", "c1a1"]);
+  const replies = ["c6b7", "b7a8"];
+  const updates = [];
+  const started = Date.now();
+
+  await game.play({ async bestMove() { return replies.shift(); } }, {
+    delayMs: 0,
+    startDelayMs: 200,
+    onUpdate(snapshot) { updates.push({ at: Date.now() - started, snapshot }); },
+  });
+
+  assert.equal(updates[0].snapshot.phase, "playing");
+  assert.equal(updates[0].snapshot.lastMove, null);
+  assert.equal(updates[0].snapshot.fen, EXAMPLE.fen);
+  const firstMove = updates.find((update) => update.snapshot.lastMove);
+  assert.equal(firstMove.snapshot.lastMove.color, "w");
+  assert.ok(firstMove.at - updates[0].at >= 190, `first move came after ${firstMove.at - updates[0].at}ms`);
+});
+
+test("a negative start delay is rejected", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1"]);
+  await assert.rejects(game.play({ async bestMove() { return "c6b7"; } }, { startDelayMs: -1 }), /Start delay/);
+});
+
 test("promotion choices are explicit and a queued promotion changes the preview", () => {
   const game = createPremoveGame({ id: "promotion", fen: "7k/P7/8/8/8/8/8/7K w - - 0 1" });
   const promotions = game.legalMovesFrom("a7").filter((move) => move.to === "a8");

@@ -129,7 +129,9 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
     return snapshot();
   }
 
-  async function play(engine, { delayMs = 1000, onUpdate = () => {} } = {}) {
+  // delayMs: pause after each move. startDelayMs: pause after the board switches to the
+  // starting position and before White's first move, so the player sees playback begin.
+  async function play(engine, { delayMs = 1000, startDelayMs = 0, onUpdate = () => {} } = {}) {
     assertPlanning();
     if (premoves.length === 0) {
       throw new Error("Queue at least one premove before starting.");
@@ -140,9 +142,13 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
     if (!Number.isFinite(delayMs) || delayMs < 0) {
       throw new RangeError("Move delay must be a non-negative number.");
     }
+    if (!Number.isFinite(startDelayMs) || startDelayMs < 0) {
+      throw new RangeError("Start delay must be a non-negative number.");
+    }
 
     phase = "playing";
     await onUpdate(snapshot());
+    await pause(startDelayMs);
 
     const publishMove = async (move) => {
       lastMove = {
