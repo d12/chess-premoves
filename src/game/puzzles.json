@@ -47,5 +47,22 @@
       "b3g8",
       "f1h1"
     ]
+  },
+  {
+    "id": "4",
+    "title": "Knighty knight",
+    "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
+    "fen": "8/5p2/6Q1/6p1/4N3/K1p5/8/k7 w - - 0 1",
+    "number_of_moves": 3,
+    "solution": [
+      "Qb6",
+      "Qg1",
+      "Qxc1"
+    ],
+    "solution_uci": [
+      "g6b6",
+      "b6g1",
+      "g1c1"
+    ]
   }
 ]
