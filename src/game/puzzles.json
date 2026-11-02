@@ -33,19 +33,19 @@
   },
   {
     "id": "3",
-    "title": "No escape",
+    "title": "Nothing crazy yet",
     "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
-    "fen": "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1",
+    "fen": "8/4K3/8/6k1/8/1Q6/8/4R3 w - - 0 1",
     "number_of_moves": 3,
     "solution": [
-      "Rc1",
-      "Qb2",
-      "Ra1"
+      "Rf1",
+      "Qg8",
+      "Rh1"
     ],
     "solution_uci": [
-      "e1c1",
-      "d2b2",
-      "c1a1"
+      "e1f1",
+      "b3g8",
+      "f1h1"
     ]
   }
 ]
