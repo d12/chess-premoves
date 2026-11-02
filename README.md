@@ -20,6 +20,21 @@ The production files are written to `dist/` and can be hosted on GitHub Pages or
 
 On compact screens, the puzzle board, premove strip, and actions stay visible together. Swipe the premove strip horizontally to review longer lines.
 
+## Chess piece images
+
+To install the Neo piece set, provide the asset server's domain (or its full HTTP(S) origin):
+
+```sh
+npm run download:pieces -- https://example.com
+```
+
+The script downloads all 12 300x300 PNGs from
+`/chess-themes/pieces/neo/300/{color}{piece}.png` into `src/assets/pieces/`.
+It checks the PNG headers and dimensions before writing any files. Run it again to replace
+the set, then rebuild for production. The board and promotion picker use the images when
+available; otherwise they use the original Unicode pieces. Commit the downloaded files if
+they should be included in deployments, and confirm the provider's licensing terms.
+
 ## Planning premoves
 
 Premoves follow chess.com / lichess rules: while planning, a move is only checked against

@@ -11,6 +11,11 @@ const pieceSymbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
   b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" },
 };
+const pieceImages = import.meta.glob("./assets/pieces/*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
 const pieceNames = {
   k: "king",
   q: "queen",
@@ -44,6 +49,14 @@ function escapeHTML(value) {
     "\"": "&quot;",
     "'": "&#39;",
   })[character]);
+}
+
+function renderPiece(color, type) {
+  const image = pieceImages[`./assets/pieces/${color}${type}.png`];
+  const content = image
+    ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />`
+    : pieceSymbols[color][type];
+  return `<span class="piece ${color === "w" ? "white-piece" : "black-piece"}" aria-hidden="true">${content}</span>`;
 }
 
 function renderHeader() {
@@ -175,7 +188,7 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
           aria-label="${square}, ${pieceLabel}${isLegalTarget ? ", legal destination" : ""}"
           ${canDrag ? 'draggable="true"' : ""}
         >
-          ${piece ? `<span class="piece ${piece.color === "w" ? "white-piece" : "black-piece"}" aria-hidden="true">${pieceSymbols[piece.color][piece.type]}</span>` : ""}
+          ${piece ? renderPiece(piece.color, piece.type) : ""}
           ${rankLabel}
           ${fileLabel}
         </button>
@@ -192,7 +205,7 @@ function renderPromotionDialog() {
   const playerColor = state.snapshot.playerColor;
   const options = state.promotionRequest.options.map((option) => `
     <button class="promotion-choice" type="button" data-action="choose-promotion" data-promotion="${option.promotion}">
-      <span class="piece ${playerColor === "w" ? "white-piece" : "black-piece"}" aria-hidden="true">${pieceSymbols[playerColor][option.promotion]}</span>
+      ${renderPiece(playerColor, option.promotion)}
       <span>${pieceNames[option.promotion]}</span>
     </button>
   `).join("");

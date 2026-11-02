@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test",
+    "download:pieces": "node scripts/download-pieces.mjs",
     "build:wasm": "make -s --no-print-directory -C premove-puzzles/engine wasm && node scripts/wasm-stamp.mjs write",
     "check:wasm": "node scripts/wasm-stamp.mjs check && python3 premove-puzzles/tests/wasm_check.py",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
