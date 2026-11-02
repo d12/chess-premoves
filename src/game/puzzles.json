@@ -67,7 +67,7 @@
   },
   {
     "id": "5",
-    "title": "Two rooks, bishop and two pawns vs king and bishop and three pawns",
+    "title": "Teamwork",
     "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
     "fen": "8/6R1/5p2/b7/1ppP4/4K3/1R3P1k/3B4 w - - 1 1",
     "number_of_moves": 3,
