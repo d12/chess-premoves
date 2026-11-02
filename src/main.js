@@ -1,5 +1,8 @@
 import { burst, cannons, PALETTES } from "./effects/confetti.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
+import {
+  annotationColor, annotationLayers, EMPTY_ANNOTATIONS, hasAnnotations, toggleArrow, toggleHighlight,
+} from "./game/annotations.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { getPuzzle, PUZZLES } from "./game/puzzles.js";
@@ -39,6 +42,9 @@ const state = {
   pendingPieceMove: null,
   pendingCelebration: null,
   revealOutcome: false,
+  // right-click arrows and highlights; drawingArrow is the right-drag in progress
+  annotations: EMPTY_ANNOTATIONS,
+  drawingArrow: null,
   interactionError: "",
   progressError: "",
   executionError: "",
@@ -203,7 +209,12 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
       `);
     }
   }
-  return `<div class="board" role="group" aria-label="Chessboard">${squares.join("")}</div>`;
+  const layers = annotationLayers(state.annotations, state.drawingArrow);
+  return `<div class="board" role="group" aria-label="Chessboard">
+    <svg class="board-highlights" viewBox="0 0 8 8" aria-hidden="true">${layers.highlights}</svg>
+    ${squares.join("")}
+    <svg class="board-arrows" viewBox="0 0 8 8" aria-hidden="true">${layers.arrows}</svg>
+  </div>`;
 }
 
 function renderPromotionDialog() {
@@ -521,6 +532,8 @@ function openPuzzle(id) {
   if (!state.progressStore.isUnlocked(id)) {
     return;
   }
+  state.annotations = EMPTY_ANNOTATIONS;
+  state.drawingArrow = null;
   state.pendingPieceMove = null;
   state.pendingCelebration = null;
   state.revealOutcome = false;
@@ -735,6 +748,83 @@ app.addEventListener("drop", (event) => {
   if (from) {
     attemptMove(from, squareElement.dataset.square);
   }
+});
+
+// ---- Right-click arrows and highlights (chess.com style) ----
+
+// Redraw just the annotation layers, so dragging an arrow doesn't rebuild the board.
+function updateAnnotationLayers() {
+  const layers = annotationLayers(state.annotations, state.drawingArrow);
+  const highlights = app.querySelector(".board-highlights");
+  const arrows = app.querySelector(".board-arrows");
+  if (highlights) highlights.innerHTML = layers.highlights;
+  if (arrows) arrows.innerHTML = layers.arrows;
+}
+
+function squareAtPoint(clientX, clientY) {
+  const board = app.querySelector(".board");
+  if (!board) {
+    return null;
+  }
+  const rect = board.getBoundingClientRect();
+  const column = Math.floor(((clientX - rect.left) / rect.width) * 8);
+  const row = Math.floor(((clientY - rect.top) / rect.height) * 8);
+  if (column < 0 || column > 7 || row < 0 || row > 7) {
+    return null;
+  }
+  return `${files[column]}${8 - row}`;
+}
+
+app.addEventListener("contextmenu", (event) => {
+  if (event.target.closest(".board")) {
+    event.preventDefault();
+  }
+});
+
+// Any left click clears the annotations, like chess.com.
+document.addEventListener("mousedown", (event) => {
+  if (event.button === 0 && hasAnnotations(state.annotations)) {
+    state.annotations = EMPTY_ANNOTATIONS;
+    updateAnnotationLayers();
+  }
+}, true);
+
+app.addEventListener("mousedown", (event) => {
+  if (event.button !== 2 || !event.target.closest(".board")) {
+    return;
+  }
+  const from = squareAtPoint(event.clientX, event.clientY);
+  if (from) {
+    event.preventDefault();
+    state.drawingArrow = { from, to: from, color: annotationColor("arrow", event) };
+  }
+});
+
+window.addEventListener("mousemove", (event) => {
+  const drawing = state.drawingArrow;
+  if (!drawing) {
+    return;
+  }
+  const to = squareAtPoint(event.clientX, event.clientY) ?? drawing.from;
+  if (to !== drawing.to) {
+    state.drawingArrow = { ...drawing, to };
+    updateAnnotationLayers();
+  }
+});
+
+window.addEventListener("mouseup", (event) => {
+  const drawing = state.drawingArrow;
+  if (event.button !== 2 || !drawing) {
+    return;
+  }
+  state.drawingArrow = null;
+  const to = squareAtPoint(event.clientX, event.clientY);
+  if (to === drawing.from) {
+    state.annotations = toggleHighlight(state.annotations, to, annotationColor("highlight", event));
+  } else if (to) {
+    state.annotations = toggleArrow(state.annotations, drawing.from, to, annotationColor("arrow", event));
+  }
+  updateAnnotationLayers();
 });
 
 app.addEventListener("keydown", (event) => {
