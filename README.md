@@ -85,6 +85,20 @@ Commit `src/engine/generated/premove-engine.js` so `npm run build` and static de
 work without Emscripten installed. Without it, the opponent tests are skipped and the app
 will not start.
 
+### When to rebuild
+
+Only when the opponent's C++ sources change: `premove-puzzles/engine/src/refute.hpp`,
+`refute_api.hpp`, `engine/wasm/premove_wasm.cpp`, `engine/vendor/chess.hpp` or the
+`engine/Makefile` flags. Puzzles, JS/CSS and the rest of `ppz` do not need it.
+`npm run build:wasm` records a fingerprint of those sources next to the module
+(`premove-engine.sources.sha256`), and:
+
+* a **pre-commit hook** (installed by `npm install`, in `.githooks/`) rebuilds the module and
+  adds it to the commit when those sources changed (or stops the commit if Emscripten is not
+  installed). It also runs the puzzle checks when `src/game/puzzles.json` is committed;
+* `npm test` fails if the committed module is older than its sources, which also catches
+  commits made with `--no-verify`.
+
 `PREMOVE_FULL_CHECK=1 npm test` runs the cross-check against the chess.js reference on all
 fixture puzzles instead of a quarter of them (about a minute). `npm run check:wasm` needs
 Python 3.11+ with `pip install chess` and a C++ compiler (it builds the native engine).
