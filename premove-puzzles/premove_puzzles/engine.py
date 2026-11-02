@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 import queue as queue_mod
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -134,50 +135,89 @@ class Solver:
 
 
 class GeneratorPool:
-    """Runs N `pmcore gen` workers with different seeds and merges their output."""
+    """Runs N `pmcore gen` workers until a shared deadline and merges their output.
 
-    def __init__(self, workers: int, args: list[str], seed: int):
+    get() returns ("puzzle", data) or ("exit", slot). A worker that dies before the deadline
+    is restarted with a new seed (and reported), so a crash cannot end a run early.
+    """
+
+    def __init__(self, workers: int, args: list[str], seed: int, seconds: float):
         self.q: queue_mod.Queue = queue_mod.Queue()
-        self.procs = []
+        self.args = args
+        self.seed = seed
+        self.deadline = time.monotonic() + seconds
+        self.binary = str(ensure_binary())
+        self.procs: dict[int, subprocess.Popen] = {}
         self.stats: dict[int, dict] = {}
-        binary = str(ensure_binary())
-        for i in range(workers):
-            p = subprocess.Popen([binary, "gen", *args, *tables_args(), "--seed", str(seed * 1000 + i)],
-                                 stdout=subprocess.PIPE, text=True, bufsize=1)
-            self.procs.append(p)
-            threading.Thread(target=self._pump, args=(i, p), daemon=True).start()
+        self.finished_stats: list[dict] = []
+        self.errors: dict[int, list[str]] = {}
+        self.crashes: list[str] = []
+        self.spawned = 0
+        for slot in range(workers):
+            self._spawn(slot)
 
-    def _pump(self, idx: int, p: subprocess.Popen):
+    def remaining(self) -> float:
+        return self.deadline - time.monotonic()
+
+    def _spawn(self, slot: int):
+        seconds = max(1.0, self.remaining())
+        seed = self.seed * 1000 + self.spawned
+        self.spawned += 1
+        p = subprocess.Popen([self.binary, "gen", *self.args, *tables_args(), "--seconds", f"{seconds:.1f}",
+                              "--seed", str(seed)],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        self.procs[slot] = p
+        self.errors[slot] = []
+        threading.Thread(target=self._pump, args=(slot, p), daemon=True).start()
+        threading.Thread(target=self._drain, args=(slot, p), daemon=True).start()
+
+    def _pump(self, slot: int, p: subprocess.Popen):
         for line in p.stdout:
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if msg.get("type") == "stats":
-                self.stats[idx] = msg
+                self.stats[slot] = msg
             else:
-                self.q.put(msg["data"])
-        self.q.put(None)
+                self.q.put(("puzzle", msg["data"]))
+        p.wait()
+        self.q.put(("exit", slot))
 
-    def alive(self) -> bool:
-        return any(p.poll() is None for p in self.procs)
+    def _drain(self, slot: int, p: subprocess.Popen):
+        for line in p.stderr:
+            buf = self.errors.setdefault(slot, [])
+            buf.append(line.rstrip())
+            del buf[:-5]
+
+    def handle_exit(self, slot: int) -> bool:
+        """Call on ("exit", slot). Returns True if the worker is done for good."""
+        p = self.procs[slot]
+        if slot in self.stats:
+            self.finished_stats.append(self.stats.pop(slot))
+        if p.returncode != 0 and self.remaining() > 3:
+            tail = " | ".join(self.errors.get(slot, [])) or f"exit code {p.returncode}"
+            self.crashes.append(tail)
+            self._spawn(slot)
+            return False
+        return True
 
     def get(self, timeout: float):
         return self.q.get(timeout=timeout)
 
     def totals(self) -> dict:
         tot: dict[str, float] = {}
-        for s in self.stats.values():
+        for s in [*self.finished_stats, *self.stats.values()]:
             for k, v in s.items():
-                if isinstance(v, (int, float)):
+                if isinstance(v, (int, float)) and k != "seconds":
                     tot[k] = tot.get(k, 0) + v
         return tot
 
     def stop(self):
-        for p in self.procs:
+        for p in self.procs.values():
             if p.poll() is None:
                 p.terminate()
-        for p in self.procs:
+        for p in self.procs.values():
             try:
                 p.wait(timeout=5)
             except subprocess.TimeoutExpired:

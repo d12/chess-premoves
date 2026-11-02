@@ -488,6 +488,7 @@ struct GenOpts {
     int64_t missBudget = 20'000; // budget when Stockfish saw no mate
     bool sfPrescreen = false;
     int statsEvery = 10;  // seconds
+    int minPieces = 0, maxPieces = 32;  // total pieces on the board, kings included
 };
 
 static int chebyshev(int a, int b) { return std::max(std::abs((a & 7) - (b & 7)), std::abs((a >> 3) - (b >> 3))); }
@@ -505,6 +506,9 @@ class Generator {
             if (!sfOk) std::cerr << "warning: could not start stockfish, screening disabled\n";
         }
         auto t0 = Clock::now(), lastStats = t0;
+        // Hard stop: a slow position being analysed when time runs out is abandoned.
+        S.hasDeadline = true;
+        S.deadline = t0 + std::chrono::milliseconds((long long)(O.seconds * 1000));
         std::vector<double> w;
         for (auto& s : O.specs) w.push_back(s.weight);
         std::discrete_distribution<int> pickSpec(w.begin(), w.end());
@@ -618,10 +622,71 @@ class Generator {
             if (s < 0 || g.c[s] != '.') return false;
             g.c[s] = (char)tolower(p);
         }
-        return true;
+        return pad(g);
     }
 
-    bool sigAllowed(const Grid& g) { return allowed.count(g.sig()) > 0; }
+    static int pieceCount(const Grid& g) {
+        int n = 0;
+        for (char ch : g.c) n += ch != '.';
+        return n;
+    }
+
+    // Fill the board up to the requested piece count with "scenery" that rarely changes the
+    // solution but makes positions look like real games. Mostly locked pawn pairs (a white
+    // pawn with a black pawn directly in front: neither can move, so they cost the search
+    // almost nothing), plus some loose pawns and the occasional extra minor piece.
+    bool pad(Grid& g) {
+        if (O.minPieces <= 0) return true;
+        int have = pieceCount(g);
+        int target = O.minPieces + rnd(std::max(1, std::min(O.maxPieces, O.minPieces + 2) - O.minPieces + 1));
+        if (have > O.maxPieces) return false;
+        for (int tries = 0; have < target && tries < 60; ++tries) {
+            double x = uni(rng);
+            if (x < 0.55 && have + 2 <= O.maxPieces) {  // locked pair: P on ranks 2-6, p right in front
+                int s = (1 + rnd(5)) * 8 + rnd(8);
+                if (g.c[s] != '.' || g.c[s + 8] != '.') continue;
+                g.c[s] = 'P';
+                g.c[s + 8] = 'p';
+                have += 2;
+            } else if (x < 0.75) {  // black pawn, ranks 5-7 (several moves from promoting)
+                int s = (4 + rnd(3)) * 8 + rnd(8);
+                if (g.c[s] != '.') continue;
+                g.c[s] = 'p';
+                have++;
+            } else if (x < 0.88) {  // white pawn, ranks 2-4
+                int s = (1 + rnd(3)) * 8 + rnd(8);
+                if (g.c[s] != '.') continue;
+                g.c[s] = 'P';
+                have++;
+            } else {  // a minor piece for either side
+                int s = anySquare(g);
+                if (s < 0) continue;
+                g.c[s] = (uni(rng) < 0.5) ? "NB"[rnd(2)] : "nb"[rnd(2)];
+                have++;
+            }
+        }
+        return have >= O.minPieces && have <= O.maxPieces;
+    }
+
+    // With a piece-count range, padding varies the pawns and minor pieces, so a position is
+    // allowed when its count is in range and its white major/core pieces match a spec.
+    bool sigAllowed(const Grid& g) {
+        if (O.minPieces <= 0 && O.maxPieces >= 32) return allowed.count(g.sig()) > 0;
+        int n = pieceCount(g);
+        if (n < O.minPieces || n > O.maxPieces) return false;
+        std::string w;
+        for (char ch : g.c)
+            if (ch == 'Q' || ch == 'R') w += ch;
+        std::sort(w.begin(), w.end());
+        for (const Spec& sp : O.specs) {
+            std::string sw;
+            for (char ch : sp.white)
+                if (ch == 'Q' || ch == 'R') sw += ch;
+            std::sort(sw.begin(), sw.end());
+            if (sw == w) return true;
+        }
+        return false;
+    }
 
     bool mutateFromPool(Grid& g) {
         // Pick a cell uniformly (so rare kinds of puzzle get explored as much as common ones),
@@ -943,6 +1008,9 @@ int main(int argc, char** argv) {
         o.sfPrescreen = flag(argc, argv, "--sf-prescreen");
         o.missBudget = std::stoll(arg(argc, argv, "--miss-budget", "20000"));
         o.statsEvery = std::stoi(arg(argc, argv, "--stats-every", "10"));
+        o.minPieces = std::stoi(arg(argc, argv, "--min-pieces", "0"));
+        o.maxPieces = std::stoi(arg(argc, argv, "--max-pieces", "32"));
+        if (o.maxPieces < o.minPieces) o.maxPieces = o.minPieces;
         std::string specs = arg(argc, argv, "--specs", "KQR-K,KRR-K,KQ-KP,KRB-K,KRN-K,KQB-K,KQN-K,KR-KP,KQ-KPP,KRBN-K");
         for (auto& s : split(specs, ',')) {
             if (s.empty()) continue;

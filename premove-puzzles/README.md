@@ -95,7 +95,8 @@ on a 3090. The CPU and CUDA builders share the same per-position code
 | `--pieces N,B` | these piece types must move in a shortest solution (`Q R B N P K` or names) |
 | `--strict` | …and in **every** shortest solution (no way around using them) |
 | `--material KQR-K,KRB-KP` | material to sample, white-black; `:weight` sets frequency |
-| `--count`, `--minutes` | batch size and search time |
+| `--min-pieces N` / `--max-pieces N` | total pieces on the board, kings included. Positions are padded with "scenery" (mostly locked pawn pairs, some loose pawns and minor pieces) that need not take part in the solution; scoring stops penalising them up to N |
+| `--count`, `--minutes` | batch size and search time. `--minutes` is a hard limit: the search stops on time even mid-position, and a worker that crashes is restarted so the run still lasts the full time |
 | `--details` | also print solutions and score breakdowns |
 | `--workers` | parallel workers (default: one per core) |
 

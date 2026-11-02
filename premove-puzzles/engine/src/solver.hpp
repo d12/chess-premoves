@@ -18,6 +18,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -135,6 +136,14 @@ class Solver {
     int64_t nodes = 0;
     int64_t tableHits = 0;
     bool aborted = false;
+    // Optional wall-clock deadline (the generator's --seconds): searches abort once it passes.
+    bool hasDeadline = false;
+    std::chrono::steady_clock::time_point deadline{};
+
+    bool overBudget() {
+        if (++nodes > nodeLimit) return true;
+        return hasDeadline && (nodes & 1023) == 0 && std::chrono::steady_clock::now() > deadline;
+    }
     tb::TableSet* tables = nullptr;  // optional distance-to-mate tables (exact, O(1))
 
     // Table lookup: 1 = mate within k, 0 = no mate within k, -1 = not covered.
@@ -187,7 +196,7 @@ class Solver {
             if (e->win && e->win <= k) return true;
             if (e->fail >= k) return false;
         }
-        if (++nodes > nodeLimit) {
+        if (overBudget()) {
             aborted = true;
             return false;
         }
@@ -538,7 +547,7 @@ class Solver {
 
     bool olSearch(int level, int r, uint8_t used) {
         if (aborted) return false;
-        if (++nodes > nodeLimit) {
+        if (overBudget()) {
             aborted = true;
             return false;
         }
@@ -587,7 +596,7 @@ class Solver {
 
     uint64_t countRec(int level, int r, uint8_t used, int* firstMoves) {
         if (aborted) return 0;
-        if (++nodes > nodeLimit) {
+        if (overBudget()) {
             aborted = true;
             return 0;
         }

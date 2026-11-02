@@ -54,8 +54,14 @@ class Scored:
         return self.data["fen"]
 
 
-def score(d: dict, w: dict | None = None) -> Scored:
+def score(d: dict, w: dict | None = None, min_pieces: int = 0) -> Scored:
+    """With min_pieces (generate --min-pieces), a full board is what was asked for: pieces up to
+    that count are not penalised for economy, and pieces that take no part cost a quarter as
+    much as usual (they are scenery by request)."""
     w = {**DEFAULT_WEIGHTS, **(w or {})}
+    if min_pieces:
+        w["redundant_white"] *= 0.25
+        w["redundant_black"] *= 0.25
     n = d["n"]
     b: dict[str, float] = {}
     b["length"] = w["length"] * n
@@ -72,7 +78,7 @@ def score(d: dict, w: dict | None = None) -> Scored:
     b["distinct_movers"] = w["distinct_movers"] * max(0, d.get("distinct_movers", 1) - 1)
     b["mate_variety"] = w["mate_variety"] * max(0, len(d.get("mate_pieces", "")) - 1)
     pieces = len([c for c in d["fen"].split()[0] if c.isalpha()])
-    b["economy"] = w["economy"] * max(0, pieces - 3)
+    b["economy"] = w["economy"] * max(0, pieces - max(3, min_pieces))
     rem = d.get("removals", [])
     b["redundant_white"] = w["redundant_white"] * sum(r["color"] == "w" and r["result"] == "redundant" for r in rem)
     b["redundant_black"] = w["redundant_black"] * sum(r["color"] == "b" and r["result"] == "redundant" for r in rem)

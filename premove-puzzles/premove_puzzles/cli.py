@@ -119,8 +119,16 @@ def cmd_generate(a):
         err("note: Stockfish not found; running without it (slower). Use --stockfish PATH.")
 
     ensure_binary()
-    gen_args = ["--min", str(min_n), "--max", str(max_n), "--seconds", str(a.minutes * 60),
+    min_pieces = a.min_pieces or 0
+    max_pieces = a.max_pieces or 32
+    if min_pieces > max_pieces:
+        sys.exit("--min-pieces is larger than --max-pieces")
+    if min_pieces > 20:
+        err("note: very full boards (20+ pieces) make premove plans hard to find")
+    gen_args = ["--min", str(min_n), "--max", str(max_n),
                 "--specs", ",".join(material), "--stats-every", "3"]
+    if min_pieces or max_pieces < 32:
+        gen_args += ["--min-pieces", str(min_pieces), "--max-pieces", str(max_pieces)]
     if pieces:
         gen_args += ["--strict" if a.strict else "--require", pieces]
     if sf_path:
@@ -137,40 +145,50 @@ def cmd_generate(a):
 
     err(f"searching {a.minutes:g} min · {workers} workers · moves {min_n}-{max_n}"
         + (f" · pieces {pieces}{' (every solution)' if a.strict else ''}" if pieces else "")
+        + ((f" · {min_pieces}-{max_pieces}" if max_pieces < 32 else f" · {min_pieces}+") + " pieces on the board"
+           if min_pieces or max_pieces < 32 else "")
         + (" · stockfish on" if sf_path else "")
         + (f" · {len(table_files())} mate tables" if table_files() else ""))
     if not table_files():
         err("tip: `ppz tables build` (one-time, a few minutes) makes generation several times faster")
-    pool = GeneratorPool(workers, gen_args, seed)
+    pool = GeneratorPool(workers, gen_args, seed, a.minutes * 60)
     t0, last = time.time(), 0.0
     received = known = 0
-    finished = 0
+    active = workers
     try:
-        while finished < workers:
+        while active > 0:
+            if pool.remaining() < -15:  # workers stop on their own at the deadline; this is a backstop
+                err("\nworkers did not stop at the time limit; stopping them")
+                break
             try:
-                d = pool.get(timeout=0.5)
+                kind, payload = pool.get(timeout=0.5)
             except queue_mod.Empty:
-                d = False
-            if d is None:
-                finished += 1
-            elif d:
+                kind, payload = None, None
+            if kind == "exit":
+                if pool.handle_exit(payload):
+                    active -= 1
+            elif kind == "puzzle":
+                d = payload
                 received += 1
+                n_pieces = sum(ch.isalpha() for ch in d["fen"].split()[0])
+                if not min_pieces <= n_pieces <= max_pieces:
+                    continue
                 key = canonical_key(d["fen"])
                 if key in seen:
                     known += 1
                 else:
                     seen.add(key)
                     d["canonical"] = key
-                    sc = score(d, weights)
+                    sc = score(d, weights, min_pieces=min_pieces)
                     if archive.would_admit(sc):
                         if annot:
                             d.update(annot.annotate(d))
-                            sc = score(d, weights)
+                            sc = score(d, weights, min_pieces=min_pieces)
                         archive.add(sc)
             if time.time() - last > 2 and sys.stderr.isatty():
                 last = time.time()
                 st = pool.totals()
-                sys.stderr.write(f"\r  {time.time() - t0:5.0f}s  positions {int(st.get('sampled', 0)):>7}  "
+                sys.stderr.write(f"\r  {max(0, pool.remaining()):5.0f}s left  positions {int(st.get('sampled', 0)):>7}  "
                                  f"candidates {received:>5}  kept {len(archive):>4} in {len(archive.cells):>3} kinds  "
                                  f"near-dupes {archive.rejected_dupes:>4}  ")
                 sys.stderr.flush()
@@ -182,8 +200,10 @@ def cmd_generate(a):
             annot.close()
     if sys.stderr.isatty():
         err("")
+    if pool.crashes:
+        err(f"warning: {len(pool.crashes)} worker crash(es), restarted automatically; last error: {pool.crashes[-1]}")
     st = pool.totals()
-    err(f"positions examined {int(st.get('sampled', 0))}, candidates {received}, "
+    err(f"finished in {time.time() - t0:.0f}s; positions examined {int(st.get('sampled', 0))}, candidates {received}, "
         f"kept {len(archive)} across {len(archive.cells)} kinds, near-duplicates merged {archive.rejected_dupes}"
         + (f", already known {known}" if known else ""))
 
@@ -549,6 +569,9 @@ def main(argv=None):
     g.add_argument("--pieces", help="piece types that must move in a shortest solution, e.g. 'N,B' or 'knight'")
     g.add_argument("--strict", action="store_true", help="--pieces must move in EVERY shortest solution")
     g.add_argument("--material", help="comma list like KQR-K,KRB-KP (white-black, optional :weight)")
+    g.add_argument("--min-pieces", type=int, help="at least this many pieces on the board, kings included; "
+                   "extra pawns/minor pieces are added as scenery and need not take part")
+    g.add_argument("--max-pieces", type=int, help="at most this many pieces on the board")
     g.add_argument("--count", type=int, default=10, help="puzzles to output (default 10)")
     g.add_argument("--minutes", type=float, default=2, help="search time (default 2)")
     g.add_argument("--workers", type=int, help="parallel workers (default: CPU count)")
