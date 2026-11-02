@@ -1,3 +1,4 @@
+import { burst, cannons, PALETTES } from "./effects/confetti.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
@@ -36,6 +37,8 @@ const state = {
   selectedSquare: null,
   promotionRequest: null,
   pendingPieceMove: null,
+  pendingCelebration: null,
+  revealOutcome: false,
   interactionError: "",
   progressError: "",
   executionError: "",
@@ -172,6 +175,7 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
       const isPremove = premoveSquares.has(square);
       const isLastMove = lastMoveSquares.has(square);
       const isLegalTarget = legalTargetSquares.has(square);
+      const isMated = state.snapshot.matedKing === square;
       const pieceLabel = piece
         ? `${piece.color === "w" ? "white" : "black"} ${pieceNames[piece.type]}`
         : "empty";
@@ -186,10 +190,10 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
 
       squares.push(`
         <button
-          class="square ${isLight ? "light-square" : "dark-square"} ${isSelected ? "is-selected" : ""} ${isPremove ? "is-premove" : ""} ${isLastMove ? "is-last-move" : ""} ${isLegalTarget ? "is-legal-target" : ""}"
+          class="square ${isLight ? "light-square" : "dark-square"} ${isSelected ? "is-selected" : ""} ${isPremove ? "is-premove" : ""} ${isLastMove ? "is-last-move" : ""} ${isLegalTarget ? "is-legal-target" : ""} ${isMated ? "is-mated" : ""}"
           type="button"
           data-square="${square}"
-          aria-label="${square}, ${pieceLabel}${isLegalTarget ? ", legal destination" : ""}"
+          aria-label="${square}, ${pieceLabel}${isLegalTarget ? ", legal destination" : ""}${isMated ? ", checkmated" : ""}"
           ${canDrag ? 'draggable="true"' : ""}
         >
           ${piece ? renderPiece(piece.color, piece.type) : ""}
@@ -261,7 +265,7 @@ function renderOutcome() {
   const { perfect, minimumMoves, movesUsed } = state.snapshot;
   if (victory && perfect) {
     return `
-    <div class="outcome-card is-perfect" role="status">
+    <div class="outcome-card is-perfect ${state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">Perfect solve</p>
       <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
       <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
@@ -279,7 +283,7 @@ function renderOutcome() {
     ? `<p class="perfect-hint">You used ${plural(movesUsed, "premove")}; it can be done in ${minimumMoves}. Retry for a perfect <span aria-hidden="true">★</span></p>`
     : "";
   return `
-    <div class="outcome-card ${victory ? "is-victory" : draw ? "is-draw" : "is-defeat"}" role="status">
+    <div class="outcome-card ${victory ? "is-victory" : draw ? "is-draw" : "is-defeat"} ${victory && state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">${victory ? "Beautifully seen" : draw ? "The position is level" : "Keep training"}</p>
       <h3>${title}</h3>
       <p>${escapeHTML(message)}</p>
@@ -409,6 +413,45 @@ function animatePieceMove(move, originRect) {
   );
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Checkmate: the mated king wobbles and topples, the board thumps, and confetti bursts from
+// the king (gold stars for a perfect solve). Runs once, right after the mating move lands.
+function celebrateMate({ square, perfect }) {
+  navigator.vibrate?.([24, 40, 70]);
+  if (prefersReducedMotion()) {
+    return; // the static red glow and tipped king (CSS) still mark the mate
+  }
+  const king = app.querySelector(`[data-square="${square}"] .piece`);
+  king?.animate?.([
+    { transform: "rotate(0deg)" },
+    { transform: "rotate(-9deg)", offset: 0.15 },
+    { transform: "rotate(8deg)", offset: 0.3 },
+    { transform: "rotate(-6deg)", offset: 0.45 },
+    { transform: "rotate(4deg)", offset: 0.58 },
+    { transform: "rotate(-22deg) translate(-4%, 6%)" },
+  ], { duration: 700, delay: 110, easing: "ease-out", fill: "backwards" });
+  app.querySelector(".board")?.animate?.([
+    { transform: "scale(1)" },
+    { transform: "scale(1.018)", offset: 0.35 },
+    { transform: "scale(1)" },
+  ], { duration: 360, delay: 110, easing: "cubic-bezier(0.3, 0.7, 0.4, 1)" });
+
+  const rect = (king ?? app.querySelector(".board"))?.getBoundingClientRect();
+  if (!rect) {
+    return;
+  }
+  setTimeout(() => burst({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    count: perfect ? 160 : 140,
+    palette: perfect ? PALETTES.perfect : PALETTES.victory,
+    shapes: perfect ? ["star", "rect", "ribbon", "circle"] : ["rect", "ribbon", "circle"],
+  }), 260);
+}
+
 function render() {
   const pendingMove = state.pendingPieceMove;
   state.pendingPieceMove = null;
@@ -441,6 +484,17 @@ function render() {
   if (pendingMove && state.screen === "puzzle") {
     animatePieceMove(pendingMove, originRect);
   }
+
+  const celebration = state.pendingCelebration;
+  state.pendingCelebration = null;
+  if (celebration && state.screen === "puzzle") {
+    celebrateMate(celebration);
+  }
+  // A perfect solve gets a second, golden volley when its result card appears.
+  if (state.revealOutcome && state.screen === "puzzle" && state.snapshot?.perfect && !prefersReducedMotion()) {
+    cannons();
+  }
+  state.revealOutcome = false;
 }
 
 async function initializeApp() {
@@ -468,6 +522,8 @@ function openPuzzle(id) {
     return;
   }
   state.pendingPieceMove = null;
+  state.pendingCelebration = null;
+  state.revealOutcome = false;
   state.puzzle = getPuzzle(id);
   state.session = createPremoveGame(state.puzzle);
   state.snapshot = state.session.snapshot();
@@ -560,6 +616,15 @@ async function submitPremoves() {
           || previousMove.san !== currentMove.san
         )) {
           state.pendingPieceMove = { from: currentMove.from, to: currentMove.to };
+        }
+        if (snapshot.matedKing && !state.snapshot?.matedKing) {
+          state.pendingCelebration = {
+            square: snapshot.matedKing,
+            perfect: snapshot.minimumMoves !== null && snapshot.movesUsed <= snapshot.minimumMoves,
+          };
+        }
+        if (snapshot.phase === "complete" && state.snapshot?.phase !== "complete") {
+          state.revealOutcome = true;
         }
         state.snapshot = snapshot;
         if (snapshot.phase === "complete" && snapshot.outcome === "victory") {
