@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .engine import (TABLES_DIR, GeneratorPool, Solver, build_tables, chesscom_url, cuda_buildable, cuda_gpus,
                      ensure_binary, find_stockfish, pick_device, table_files)
+from .app import DEFAULT_APP_PUZZLES, AppPuzzles
 from .quality import DEFAULT_WEIGHTS, Archive, Scored, canonical_key, score
 from .store import DEFAULT_DB, DEFAULT_QUEUE, Database, Queue, review_block
 from .verify import verify_plan
@@ -320,8 +321,8 @@ def cmd_db(a):
     db = Database(a.db)
     items = db.load()
     if a.action == "list":
-        for x in items:
-            print(f"{x['number_of_moves']}  {x['fen']:<45}  {' '.join(x.get('solution', []))}")
+        for i, x in enumerate(items, 1):
+            print(f"{i:>3}.  {x['number_of_moves']}  {x['fen']:<45}  {' '.join(x.get('solution', []))}")
         err(f"{len(items)} puzzles in {db.path}")
     elif a.action == "stats":
         print(f"{len(items)} puzzles in {db.path}")
@@ -448,6 +449,92 @@ def cmd_info(a):
     print("search       CPU, one worker per thread (the tree search does not benefit from a GPU)")
 
 
+# ---------------------------------------------------------------- app (the game's puzzle list)
+def _confirm(question: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        sys.exit(f"{question} — rerun with --yes to confirm non-interactively")
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def _show_app_puzzle(p: dict) -> str:
+    return f"{p['id']:>3}. {p['number_of_moves']} moves  {p['title']:<36}  {p['fen']}"
+
+
+def cmd_app(a):
+    app = AppPuzzles(a.app_puzzles)
+    try:
+        puzzles = app.load()
+    except (FileNotFoundError, ValueError) as e:
+        sys.exit(str(e))
+
+    if a.action == "list":
+        for p in puzzles:
+            print(_show_app_puzzle(p) + (f"\n       {' '.join(p.get('solution', []))}" if a.solutions else ""))
+        err(f"{len(puzzles)} puzzles in {app.path}")
+        return
+
+    if a.action == "remove":
+        if a.number is None or not 1 <= a.number <= len(puzzles):
+            sys.exit(f"give a puzzle number between 1 and {len(puzzles)} with --number")
+        old = puzzles[a.number - 1]
+        print(_show_app_puzzle(old))
+        if not _confirm(f"Remove puzzle {a.number} and renumber the {len(puzzles) - a.number} after it?", a.yes):
+            sys.exit("cancelled")
+        del puzzles[a.number - 1]
+        app.save(puzzles)
+        print(f"removed; the app now has {len(puzzles)} puzzles")
+        return
+
+    # add
+    fen = a.fen
+    if a.from_db is not None:
+        items = Database(a.db).load()
+        if not 1 <= a.from_db <= len(items):
+            sys.exit(f"--from-db must be between 1 and {len(items)} (see `ppz db list`)")
+        fen = items[a.from_db - 1]["fen"]
+    if not fen:
+        sys.exit("give a FEN, or --from-db K to take puzzle K from `ppz db list`")
+    number = a.number if a.number is not None else len(puzzles) + 1
+    if not 1 <= number <= len(puzzles) + 1:
+        sys.exit(f"puzzles are numbered 1..{len(puzzles)} and unlock in order; "
+                 f"use a number up to {len(puzzles) + 1} (the next free one)")
+    replacing = number <= len(puzzles) and not a.insert
+
+    with Solver() as s:
+        d = s.analyze(fen, a.max_moves, deep=False)
+    if not d.get("ok"):
+        why = d.get("error") or ("search budget exhausted" if d.get("aborted") else f"no premove mate within {a.max_moves}")
+        sys.exit(f"not a valid puzzle: {why}")
+    if fen.split()[1] != "w":
+        sys.exit("the game expects White to move")
+    ok, why = verify_plan(fen, d["plan_uci"])
+    if not ok:
+        sys.exit(f"independent verification failed: {why}")
+    dup = app.duplicate_of(puzzles, fen, ignore_index=number - 1 if replacing else None)
+    if dup and not a.allow_duplicate:
+        sys.exit(f"this position (or a mirror image) is already puzzle {dup}; use --allow-duplicate to add it anyway")
+
+    entry = app.entry(d, a.title, a.description)
+    print(f"{'replace' if replacing else 'insert' if number <= len(puzzles) else 'add'} puzzle {number}: "
+          f"{entry['title']} — {d['n']} moves: {' '.join(d['plan_san'])}")
+    if replacing:
+        print(f"  currently: {_show_app_puzzle(puzzles[number - 1])}")
+        if not _confirm(f"Replace puzzle {number}?", a.yes):
+            sys.exit("cancelled")
+        puzzles[number - 1] = entry
+    elif number <= len(puzzles):
+        if not _confirm(f"Insert as puzzle {number} and shift {len(puzzles) - number + 1} puzzles up by one?", a.yes):
+            sys.exit("cancelled")
+        puzzles.insert(number - 1, entry)
+    else:
+        puzzles.append(entry)
+    app.save(puzzles)
+    print(f"saved {app.path} ({len(puzzles)} puzzles). Run `npm test` in the app to check every puzzle "
+          f"plays correctly in the game.")
+
+
 # ---------------------------------------------------------------- main
 def main(argv=None):
     p = argparse.ArgumentParser(prog="ppz", description="Premove chess puzzle tooling")
@@ -518,6 +605,22 @@ def main(argv=None):
 
     i = sub.add_parser("info", help="show detected hardware, Stockfish and tables")
     i.set_defaults(func=cmd_info)
+
+    ap = sub.add_parser("app", help="manage the game's puzzle list (src/game/puzzles.json)")
+    ap.add_argument("action", choices=["list", "add", "remove"])
+    ap.add_argument("fen", nargs="?", help="with add: the position (or use --db)")
+    ap.add_argument("--number", "-n", type=int,
+                    help="puzzle number: replaces it if it exists, appends if it is the next one (default: append)")
+    ap.add_argument("--insert", action="store_true", help="with add: insert at --number and shift later puzzles")
+    ap.add_argument("--from-db", type=int, metavar="K", help="with add: take puzzle K from `ppz db list`")
+    ap.add_argument("--title", help="default: generated from the material, e.g. 'Rook and bishop vs king'")
+    ap.add_argument("--description", help="default: 'Plan the forced premove mate in N, ...'")
+    ap.add_argument("--solutions", action="store_true", help="with list: show solutions")
+    ap.add_argument("--allow-duplicate", action="store_true")
+    ap.add_argument("--max-moves", type=int, default=10)
+    ap.add_argument("--yes", "-y", action="store_true", help="don't ask before replacing/inserting/removing")
+    ap.add_argument("--app-puzzles", default=str(DEFAULT_APP_PUZZLES), help="path to the app's puzzles.json")
+    ap.set_defaults(func=cmd_app)
 
     a = p.parse_args(argv)
     a.func(a)

@@ -82,6 +82,7 @@ on a 3090. The CPU and CUDA builders share the same per-position code
 | `ppz add FEN ...` / `--file f.txt` | verify and add positions straight to the db |
 | `ppz db list\|stats\|export\|remove` | manage the db; export as `json`, `jsonl`, `csv` or `sql` |
 | `ppz queue list\|clear` | manage the review queue |
+| `ppz app list\|add\|remove` | manage the game's puzzle list (`../src/game/puzzles.json`), see below |
 | `ppz tables build\|status` | build mate tables on GPU/CPU (`--device`, `--five`) / list them |
 | `ppz info` | detected CPU, GPU, CUDA, Stockfish and tables |
 
@@ -117,6 +118,28 @@ keeps its default fields (`fen,url,number_of_moves`); add `solution` with
 
 Files: `review_queue.jsonl` and `puzzles.json` in the current directory by default
 (override with `--queue` / `--db` or `PPZ_QUEUE` / `PPZ_DB`).
+
+## Adding puzzles to the game
+
+The game reads `src/game/puzzles.json` (one level up from this folder; override with
+`--app-puzzles PATH` or `PPZ_APP_PUZZLES`). Levels are numbered 1..N and unlock in order,
+so numbers are kept contiguous:
+
+| command | effect |
+|---|---|
+| `./ppz app add "FEN"` | append as puzzle N+1 |
+| `./ppz app add "FEN" --number K` | replace puzzle K (asks first); if K is N+1, append |
+| `./ppz app add "FEN" --number K --insert` | insert at K, shifting K..N up by one |
+| `./ppz app add --from-db 3` | take puzzle 3 from `ppz db list` (your accepted puzzles) |
+| `./ppz app remove --number K` | remove K and renumber the rest |
+| `./ppz app list [--solutions]` | show the app's puzzles |
+
+`add` solves the position, verifies the solution independently, refuses positions that are
+already in the app (including mirror images; `--allow-duplicate` overrides), and stores
+`fen`, `number_of_moves`, `solution` (SAN) and `solution_uci`. Title and description are
+generated (e.g. "Rook and bishop vs king", "Plan the forced premove mate in four, ...")
+unless you pass `--title` / `--description`. `--yes` skips confirmations. Then run
+`npm test` at the repo root: it checks every puzzle in the file plays correctly in the game.
 
 ## Browser opponent (WebAssembly)
 

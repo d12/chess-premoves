@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { Chess } from "chess.js";
+import { parsePlacement } from "../src/game/premoveRules.js";
 import { createPremoveGame } from "../src/game/session.js";
 
 const MODULE_URL = new URL("../src/engine/generated/premove-engine.js", import.meta.url);
@@ -78,8 +79,9 @@ function variants(fen, solution, random) {
       try { game.queueMove(asMove(solution[i])); } catch { ok = false; }
     }
     if (!ok) continue;
-    const preview = new Chess(game.snapshot().fen);
-    const moves = preview.moves({ verbose: true }).filter((m) => m.captured !== "k");
+    const preview = parsePlacement(game.snapshot().fen);
+    const moves = [...preview.entries()].filter(([, piece]) => piece.color === "w")
+      .flatMap(([square]) => game.legalMovesFrom(square));
     const pick = moves[Math.floor(random() * moves.length)];
     const plan = queueable(fen, [...solution.slice(0, k), `${pick.from}${pick.to}${pick.promotion ?? ""}`,
       ...solution.slice(k + 1)]);
@@ -134,6 +136,30 @@ test("falls back to another engine when the game leaves the submitted plan", { s
   assert.equal(asked, 1);
 });
 
+test("every generated solution can be entered on the planning board", () => {
+  for (const puzzle of ALL_FIXTURES) {
+    assert.ok(queueable(puzzle.fen, puzzle.solution), `${puzzle.fen}: ${puzzle.solution_san.join(" ")}`);
+  }
+});
+
+test("without a fallback engine, a reply is still chosen when the game leaves the plan", { skip }, async () => {
+  const { engine, createPremoveOpponent } = await load();
+  const opponent = createPremoveOpponent({ engine, puzzleFen: SOUND.fen, premoves: SOUND.plan });
+  const fen = "1k6/5B2/8/8/8/8/K7/2Q5 b - - 1 1"; // not reachable by playing the first premove
+  const move = await opponent.bestMove(fen);
+  assert.ok(new Chess(fen).moves({ verbose: true }).some((m) => `${m.from}${m.to}` === move));
+});
+
+test("the rule-of-thumb reply prefers making the next premove illegal", { skip }, async () => {
+  const { ruleOfThumbReply } = await load();
+  const fen = "1k6/8/8/1r6/8/8/8/R5K1 b - - 0 1"; // White's next premove is Ra1-a8
+  const reply = ruleOfThumbReply(fen, "a1a8");
+  const board = new Chess(fen);
+  board.move({ from: reply.slice(0, 2), to: reply.slice(2, 4) });
+  assert.equal(board.moves({ verbose: true }).some((m) => m.from === "a1" && m.to === "a8"), false,
+    `after ${reply}, Ra8 should be illegal`);
+});
+
 test("agrees with an independent chess.js reference on generated puzzles and plan variants", { skip }, async (t) => {
   const { engine, createPremoveOpponent } = await load();
   const random = rng(20261101);
@@ -151,9 +177,9 @@ test("agrees with an independent chess.js reference on generated puzzles and pla
       assert.equal(analysis.verdict, expected ? "refuted" : "sound", label);
       checked += 1;
       refuted += expected ? 1 : 0;
-      // Some valid plans cannot be typed into the planning UI (its preview keeps the
-      // opponent's pieces on their starting squares); only play out those it accepts.
-      if (queueable(puzzle.fen, plan)) {
+      // The planning UI follows premove geometry, so every plan here can be entered.
+      assert.ok(queueable(puzzle.fen, plan), `${label}: cannot be entered on the planning board`);
+      {
         const result = await playOut(engine, createPremoveOpponent, puzzle.fen, plan);
         assert.equal(result.outcome === "victory", !expected, `${label}: game outcome ${result.outcome}`);
         played += 1;
@@ -164,6 +190,6 @@ test("agrees with an independent chess.js reference on generated puzzles and pla
   t.diagnostic(`${checked} plans checked (${refuted} refuted), ${played} played through the session`);
   const minimum = FULL ? 100 : 25;
   assert.ok(checked >= minimum, `only ${checked} plans checked`);
-  assert.ok(played >= minimum * 0.8, `only ${played} plans played through the session`);
+  assert.equal(played, checked);
   assert.ok(refuted > checked / 5 && refuted < checked, `unbalanced sample: ${refuted}/${checked} refuted`);
 });

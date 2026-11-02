@@ -169,54 +169,6 @@ p {
   line-height: 1.65;
 }
 
-.download-card {
-  width: 100%;
-  padding: 19px;
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
-  background: var(--surface);
-  text-align: left;
-  box-shadow: 0 8px 24px rgba(48, 60, 42, 0.05);
-}
-
-.download-heading,
-.download-details {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.download-heading {
-  margin-bottom: 13px;
-  font-size: 0.9rem;
-}
-
-.download-heading span {
-  color: var(--green);
-  font-variant-numeric: tabular-nums;
-}
-
-.progress-track {
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e8ece4;
-}
-
-.progress-track span {
-  height: 100%;
-  display: block;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #6d8d59, #97b67f);
-  transition: width 180ms ease-out;
-}
-
-.download-details {
-  margin-top: 10px;
-  color: #737d6e;
-  font-size: 0.72rem;
-}
-
 .setup-footnote {
   margin: 16px 0 0;
   color: #778071;
@@ -1077,10 +1029,6 @@ p {
     line-height: 1.4;
   }
 
-  .download-card {
-    padding: 12px;
-  }
-
   .setup-footnote {
     margin-top: 10px;
   }
@@ -1112,16 +1060,37 @@ p {
     margin-bottom: 12px;
   }
 
+  /* Compact tiles that wrap, so 20-30 levels stay visible and in order on small screens */
   .level-grid {
-    grid-template-columns: none;
-    grid-auto-columns: minmax(105px, 1fr);
-    grid-auto-flow: column;
-    overflow-x: auto;
+    grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+    gap: 8px;
     padding: 2px;
   }
 
   .level-card {
-    min-height: 110px;
+    min-height: 0;
+    aspect-ratio: 1;
+    padding: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .level-number {
+    position: static;
+    color: inherit;
+    font-size: 1.3rem;
+    letter-spacing: -0.04em;
+  }
+
+  .level-mark {
+    top: 5px;
+    right: 7px;
+    font-size: 0.7rem;
+  }
+
+  .level-title,
+  .level-status {
+    display: none;
   }
 
   .app-footer {
@@ -1342,10 +1311,6 @@ p {
 
   .index-hero h1 {
     font-size: 1.4rem;
-  }
-
-  .level-card {
-    min-height: 80px;
   }
 }
 

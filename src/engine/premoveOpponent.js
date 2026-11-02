@@ -6,9 +6,11 @@
 //   * a refutation when one exists (makes a premove illegal, outlasts the premoves, forces a
 //     draw, or mates the player), choosing the one that ends the game soonest;
 //   * otherwise the defence that survives longest.
+// If even the cheaper "first refutation" search hits its limit (only plausible for long,
+// aimless plans against several mobile pieces), a simple rule picks the reply.
 //
-// createPremoveOpponent() returns an object with the same bestMove(fen) method as the
-// Stockfish engine, so session.play() needs no changes.
+// createPremoveOpponent() returns an object with a bestMove(fen) method, which is what
+// session.play() expects from an opponent.
 import { Chess } from "chess.js";
 import createPremoveEngineModule from "./generated/premove-engine.js";
 
@@ -62,6 +64,31 @@ export function loadPremoveEngine() {
   return enginePromise;
 }
 
+/**
+ * Last-resort reply without search: prefer a move after which the next premove is illegal,
+ * then a capture, then any legal move.
+ */
+export function ruleOfThumbReply(fen, nextPremove) {
+  const board = new Chess(fen);
+  const replies = board.moves({ verbose: true });
+  if (replies.length === 0) {
+    throw new Error("The opponent has no legal move.");
+  }
+  if (nextPremove) {
+    for (const reply of replies) {
+      board.move(reply);
+      const stillLegal = board.moves({ verbose: true }).some((m) => m.from === nextPremove.slice(0, 2)
+        && m.to === nextPremove.slice(2, 4) && (m.promotion ?? "") === (nextPremove[4] ?? ""));
+      board.undo();
+      if (!stillLegal) {
+        return `${reply.from}${reply.to}${reply.promotion ?? ""}`;
+      }
+    }
+  }
+  const pick = replies.find((m) => m.captured) ?? replies[0];
+  return `${pick.from}${pick.to}${pick.promotion ?? ""}`;
+}
+
 function samePosition(fenA, fenB) {
   return fenA.split(" ").slice(0, 2).join(" ") === fenB.split(" ").slice(0, 2).join(" ");
 }
@@ -71,8 +98,8 @@ function samePosition(fenA, fenB) {
  * @param {object} options.engine     result of loadPremoveEngine()
  * @param {string} options.puzzleFen  starting position (player to move)
  * @param {Array}  options.premoves   the submitted premoves ({from,to,promotion} or UCI)
- * @param {object} [options.fallback] engine with bestMove(fen) used if the search gives up
- *                                    or the game diverges from the expected history
+ * @param {object} [options.fallback] optional engine with bestMove(fen), used instead of the
+ *                                    built-in rule if the search gives up
  */
 export function createPremoveOpponent({ engine, puzzleFen, premoves, fallback = null, nodeLimit = DEFAULT_NODE_LIMIT }) {
   if (!engine || typeof engine.chooseReply !== "function") {
@@ -95,11 +122,11 @@ export function createPremoveOpponent({ engine, puzzleFen, premoves, fallback = 
     return samePosition(board.fen(), fen);
   }
 
-  async function fallbackMove(fen, options, reason) {
-    if (!fallback) {
-      throw new Error(`Premove opponent cannot move: ${reason}`);
+  async function fallbackMove(fen, options) {
+    if (fallback) {
+      return fallback.bestMove(fen, options);
     }
-    return fallback.bestMove(fen, options);
+    return ruleOfThumbReply(fen, plan[premovesPlayed]);
   }
 
   return Object.freeze({
@@ -116,14 +143,12 @@ export function createPremoveOpponent({ engine, puzzleFen, premoves, fallback = 
         premovesPlayed += 1;
       }
       let move = null;
-      let reason = "the game left the submitted plan";
       if (historyMatches(fen)) {
         const result = engine.chooseReply(puzzleFen, plan, history, { nodeLimit });
         move = result.move;
-        reason = "search limit reached";
       }
       if (!move) {
-        move = await fallbackMove(fen, options, reason);
+        move = await fallbackMove(fen, options);
       }
       history.push(move);
       return move;

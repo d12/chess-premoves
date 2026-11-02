@@ -1,25 +1,13 @@
-const SHARED_FEN = "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1";
+// Puzzle list. The data lives in puzzles.json, which is managed with the premove-puzzles
+// tool (`./ppz app list | add | remove`, see premove-puzzles/README.md). Ids are "1".."N"
+// and puzzles unlock in that order.
+import PUZZLE_DATA from "./puzzles.json" with { type: "json" };
 
-export const PUZZLES = Object.freeze([
-  {
-    id: "1",
-    title: "The cornered king",
-    description: "Plan the forced premove mate in three, allowing for every legal Black reply.",
-    fen: SHARED_FEN,
-  },
-  {
-    id: "2",
-    title: "A tight net",
-    description: "Plan the forced premove mate in three, allowing for every legal Black reply.",
-    fen: SHARED_FEN,
-  },
-  {
-    id: "3",
-    title: "No escape",
-    description: "Plan the forced premove mate in three, allowing for every legal Black reply.",
-    fen: SHARED_FEN,
-  },
-].map((puzzle) => Object.freeze(puzzle)));
+export const PUZZLES = Object.freeze(PUZZLE_DATA.map((puzzle) => Object.freeze({
+  ...puzzle,
+  solution: Object.freeze([...(puzzle.solution ?? [])]),
+  solution_uci: Object.freeze([...(puzzle.solution_uci ?? [])]),
+})));
 
 export function getPuzzle(id) {
   const puzzle = PUZZLES.find((candidate) => candidate.id === String(id));

@@ -1,14 +1,17 @@
 import { Chess } from "chess.js";
 
+import {
+  applyPremove,
+  initialCastling,
+  parsePlacement,
+  placementToFen,
+  premoveSan,
+  premoveTargets,
+} from "./premoveRules.js";
+
 const UCI_MOVE = /^([a-h][1-8])([a-h][1-8])([qrbn])?$/;
 
-function playerTurnPosition(chess, playerColor) {
-  const fields = chess.fen().split(" ");
-  fields[1] = playerColor;
-  fields[3] = "-";
-  return new Chess(fields.join(" "));
-}
-
+// Strict legality, used when a premove is actually played.
 function matchingLegalMove(chess, move) {
   return chess.moves({ verbose: true }).find((candidate) => (
     candidate.from === move.from
@@ -35,20 +38,31 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
   }
 
   let actual = new Chess(puzzle.fen);
-  let preview = new Chess(puzzle.fen);
+  // Planning preview: the player's pieces after the queued premoves; the opponent's pieces
+  // stay where they are, since we cannot know how they will move. Premoves are checked
+  // against piece geometry only (like chess.com / lichess); legality is checked on play.
+  const startPreview = () => ({
+    board: parsePlacement(puzzle.fen),
+    castling: initialCastling(puzzle.fen),
+    hiddenKing: null,
+  });
+  let preview = startPreview();
   let premoves = [];
   let phase = "planning";
   let outcome = null;
   let message = "";
   let lastMove = null;
-  let planningMate = false;
+
+  function previewFen() {
+    return `${placementToFen(preview.board)} ${playerColor} - - 0 1`;
+  }
 
   function snapshot() {
     return {
       phase,
       outcome,
       message,
-      fen: phase === "planning" ? preview.fen() : actual.fen(),
+      fen: phase === "planning" ? previewFen() : actual.fen(),
       premoves: premoves.map((move) => ({ ...move })),
       lastMove: lastMove ? { ...lastMove } : null,
       playerColor,
@@ -61,64 +75,38 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
     }
   }
 
+  function targetsFrom(square) {
+    return premoveTargets(preview.board, square, playerColor, preview.castling);
+  }
+
   function legalMovesFrom(square) {
     assertPlanning();
-    if (planningMate) {
-      return [];
-    }
-    return preview.moves({ square, verbose: true }).filter((move) => move.captured !== "k").map((move) => ({
-      from: move.from,
-      to: move.to,
-      promotion: move.promotion,
-      san: move.san,
+    return targetsFrom(square).map((move) => ({
+      ...move,
+      san: premoveSan(preview.board, move, playerColor, preview.castling),
     }));
   }
 
   function queueMove({ from, to, promotion }) {
     assertPlanning();
-    if (planningMate) {
-      throw new Error("The planned line already ends in checkmate.");
+    const options = targetsFrom(from).filter((move) => move.to === to);
+    if (options.length === 0) {
+      throw new RangeError(`Illegal premove: ${from}${to}.`);
     }
-
-    const move = { from, to, promotion };
-    const legalMove = matchingLegalMove(preview, move);
-    if (!legalMove) {
-      throw new RangeError(`Illegal premove: ${from}${to}${promotion ?? ""}.`);
+    const move = options.find((option) => option.promotion === (promotion || undefined));
+    if (!move) {
+      throw new RangeError(options[0].promotion
+        ? `Illegal premove: ${from}${to} needs a promotion piece.`
+        : `Illegal premove: ${from}${to}${promotion ?? ""}.`);
     }
-
-    const appliedMove = preview.move({
-      from: legalMove.from,
-      to: legalMove.to,
-      ...(legalMove.promotion ? { promotion: legalMove.promotion } : {}),
-    });
     premoves.push({
-      from: appliedMove.from,
-      to: appliedMove.to,
-      promotion: appliedMove.promotion,
-      san: appliedMove.san,
+      from: move.from,
+      to: move.to,
+      promotion: move.promotion,
+      san: premoveSan(preview.board, move, playerColor, preview.castling),
     });
-    planningMate = preview.isCheckmate();
-    preview = playerTurnPosition(preview, playerColor);
+    preview = applyPremove(preview, move, playerColor);
     return snapshot();
-  }
-
-  function rebuildPreview() {
-    preview = new Chess(puzzle.fen);
-    planningMate = false;
-
-    for (const move of premoves) {
-      const legalMove = matchingLegalMove(preview, move);
-      if (!legalMove) {
-        throw new Error("Unable to rebuild the queued premoves.");
-      }
-      preview.move({
-        from: legalMove.from,
-        to: legalMove.to,
-        ...(legalMove.promotion ? { promotion: legalMove.promotion } : {}),
-      });
-      planningMate = preview.isCheckmate();
-      preview = playerTurnPosition(preview, playerColor);
-    }
   }
 
   function undoPremove() {
@@ -127,7 +115,10 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       return snapshot();
     }
     premoves = premoves.slice(0, -1);
-    rebuildPreview();
+    preview = startPreview();
+    for (const move of premoves) {
+      preview = applyPremove(preview, move, playerColor);
+    }
     return snapshot();
   }
 

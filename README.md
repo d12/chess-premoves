@@ -20,13 +20,38 @@ The production files are written to `dist/` and can be hosted on GitHub Pages or
 
 On compact screens, the puzzle board, premove strip, and actions stay visible together. Swipe the premove strip horizontally to review longer lines.
 
-## Chess engine
+## Planning premoves
 
-The app uses the Stockfish 16 single-threaded WebAssembly build and `chess.js` for legal move generation and chess rules. Before starting a game, the app downloads the engine loader, WebAssembly core, and neural network, then stores them in the browser Cache API. The neural network is about 40.1 MB; all downloaded engine files total about 40.7 MB.
+Premoves follow chess.com / lichess rules: while planning, a move is only checked against
+how the piece moves (`src/game/premoveRules.js`). Pieces in the way, the opponent king
+standing on a square, or a position that would be checkmate if the opponent never moved
+do not block a premove, because the opponent moves in between. Each premove's real
+legality is checked when it is played; if it is illegal at that moment, the attempt ends.
 
-On later visits, cached files are reused without downloading them again, but the setup screen remains visible while the browser starts the engine and loads its neural network into memory. Browser storage eviction or clearing site data can require another download.
+The planning board shows your pieces after the queued premoves and the opponent's pieces
+where they stand now. A premove onto the square of an opponent piece removes that piece from
+the preview, except the king, which is only hidden while your piece is on its square.
 
-The engine assets in `public/engine/` are generated from the pinned `stockfish` npm dependency by the `predev` and `prebuild` scripts. The directory is intentionally git-ignored; static deployment builds it before Vite copies it into `dist/engine/`. Stockfish license and author files are included alongside the generated assets.
+## Puzzles
+
+Puzzles live in `src/game/puzzles.json` and are numbered 1..N; each unlocks when the one
+before it is completed. Manage them with the generator in `premove-puzzles/`:
+
+```sh
+cd premove-puzzles
+./ppz app list                                   # what the app has
+./ppz app add "FEN"                              # append as the next puzzle
+./ppz app add "FEN" --number 4                   # replace puzzle 4 (or add it if 4 is next)
+./ppz app add "FEN" --number 4 --insert          # insert at 4 and shift the rest up
+./ppz app add --from-db 7 --title "Corner squeeze" # puzzle 7 from `ppz db list`
+./ppz app remove --number 4                      # remove and renumber
+```
+
+`add` solves and verifies the position, stores the shortest solution, and generates a title
+and description unless you pass `--title` / `--description`. `npm test` then checks every
+puzzle in the file: numbering, that its solution can be entered on the planning board, and
+that it beats the opponent in a real game. Completion is stored per puzzle number in the
+browser, so replacing or inserting puzzles shifts what players see as completed.
 
 ## Premove-aware opponent (WebAssembly)
 
@@ -40,10 +65,12 @@ compiled to WebAssembly, to search the opponent's replies against that fixed pla
 
 Typical puzzles take well under a millisecond per reply. If a plan is too large to search
 exactly (100k positions by default, e.g. a long aimless plan against mobile pieces), it
-settles for the first refutation it finds; Stockfish is only consulted if even that fails or
-the game leaves the submitted plan. `createPremoveOpponent()` exposes the same
-`bestMove(fen)` method as the Stockfish engine, so `session.js` is unchanged, and its
-`analysis` property returns the verdict and the line (useful for showing why a plan failed).
+settles for the first refutation it finds; if even that search runs out, a simple rule picks
+the reply (make the next premove illegal if possible, else capture, else any move). There is
+no other engine: nothing is downloaded, and the module is bundled with the app (~300 KB,
+about 135 KB gzipped for the whole app). `createPremoveOpponent()` exposes the `bestMove(fen)`
+method `session.play()` expects, and its `analysis` property returns the verdict and the
+line (useful for showing why a plan failed).
 
 The module is generated, not hand-written. Build it with [Emscripten](https://emscripten.org):
 

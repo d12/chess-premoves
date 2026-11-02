@@ -1,6 +1,5 @@
-import { Chess } from "chess.js";
-import { createStockfishEngine } from "./engine/stockfish.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
+import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { getPuzzle, PUZZLES } from "./game/puzzles.js";
 import { createProgressStore } from "./game/progress.js";
@@ -24,8 +23,6 @@ const pieceNames = {
 const state = {
   screen: "loading",
   engine: null,
-  premoveEngine: null,
-  engineProgress: null,
   error: null,
   progressStore: null,
   puzzle: null,
@@ -49,13 +46,6 @@ function escapeHTML(value) {
   })[character]);
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1_000_000) {
-    return `${Math.ceil(bytes / 1_000)} KB`;
-  }
-  return `${(bytes / 1_000_000).toFixed(1)} MB`;
-}
-
 function renderHeader() {
   const engineStatus = state.engine ? "ENGINE READY" : "ENGINE SETUP";
   return `
@@ -72,40 +62,13 @@ function renderHeader() {
 }
 
 function renderLoading() {
-  const progress = state.engineProgress ?? {
-    asset: "Preparing Stockfish",
-    loaded: 0,
-    total: 40_719_949,
-    percent: 0,
-  };
   return `
     ${renderHeader()}
     <main class="setup-screen">
       <div class="setup-emblem" aria-hidden="true">♞</div>
       <p class="eyebrow">One moment before the first move</p>
       <h1>Preparing your opponent</h1>
-      <p class="setup-copy">Stockfish is downloaded once and saved in this browser. You can play as soon as the engine is ready.</p>
-      <section class="download-card" aria-live="polite">
-        <div class="download-heading">
-          <strong>${escapeHTML(progress.asset)}</strong>
-          <span>${progress.percent}%</span>
-        </div>
-        <div
-          class="progress-track"
-          role="progressbar"
-          aria-label="Stockfish download progress"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="${progress.percent}"
-        >
-          <span style="width: ${progress.percent}%"></span>
-        </div>
-        <div class="download-details">
-          <span>${formatBytes(progress.loaded)} of ${formatBytes(progress.total)}</span>
-          <span>Stockfish 16 · single-threaded</span>
-        </div>
-      </section>
-      <p class="setup-footnote">The engine is under 50 MB and is cached for your next visit.</p>
+      <p class="setup-copy">The opponent reads your whole premove plan and looks for the defence that beats it.</p>
     </main>
   `;
 }
@@ -120,7 +83,7 @@ function renderError() {
       <h1>We couldn't start the game</h1>
       <p class="setup-copy">${escapeHTML(description)}</p>
       <button class="primary-button" type="button" data-action="retry-setup">Try again</button>
-      <p class="setup-footnote">Check your connection and browser storage, then retry.</p>
+      <p class="setup-footnote">Check that browser storage is available, then retry.</p>
     </main>
   `;
 }
@@ -170,14 +133,13 @@ function renderIndex() {
         <div class="level-grid">${levelCards}</div>
         <p class="unlock-note">Complete a level to unlock the next one.</p>
       </section>
-      <footer class="app-footer">Chess rules by chess.js · Opponent powered by Stockfish 16</footer>
+      <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
     </main>
   `;
 }
 
 function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
-  const chess = new Chess(fen);
-  const board = chess.board();
+  const board = boardRows(fen); // planning previews may not be legal chess positions
   const premoveSquares = new Set(premoves.flatMap((move) => [move.from, move.to]));
   const lastMoveSquares = new Set(lastMove ? [lastMove.from, lastMove.to] : []);
   const legalTargetSquares = new Set(legalTargets);
@@ -334,7 +296,7 @@ function renderPuzzle() {
           <div class="board-frame">
             <div class="board-player-label"><span class="player-dot"></span>You · White</div>
             ${board}
-            <div class="board-bottom-label">STOCKFISH · BLACK</div>
+            <div class="board-bottom-label">OPPONENT · BLACK</div>
           </div>
         </section>
 
@@ -348,7 +310,7 @@ function renderPuzzle() {
           </div>
           ${planning || snapshot.phase === "playing" ? `<p class="panel-copy">${planning
             ? "Queue the moves you think will lead to checkmate. The board previews your pieces as you go."
-            : "Your moves and Stockfish's replies are being played in order."}</p>` : ""}
+            : "Your moves and the opponent's replies are being played in order."}</p>` : ""}
 
           ${state.interactionError ? `<p class="inline-error" role="alert">${escapeHTML(state.interactionError)}</p>` : ""}
           ${state.executionError && snapshot.phase !== "error" ? `<p class="inline-error" role="alert">${escapeHTML(state.executionError)}</p>` : ""}
@@ -368,7 +330,7 @@ function renderPuzzle() {
               </button>
             </div>
           ` : ""}
-          ${planning ? '<p class="panel-footnote">Moves that become illegal after Stockfish replies will end the attempt.</p>' : ""}
+          ${planning ? '<p class="panel-footnote">Moves that become illegal after the opponent replies will end the attempt.</p>' : ""}
         </aside>
       </div>
       ${renderPromotionDialog()}
@@ -442,30 +404,17 @@ function render() {
 async function initializeApp() {
   state.screen = "loading";
   state.error = null;
-  state.engineProgress = null;
   render();
   try {
     if (!state.progressStore) {
       state.progressStore = createProgressStore();
     }
-    // The premove-aware opponent (WebAssembly, bundled) plays the games; Stockfish stays
-    // as its fallback for plans too large to search exhaustively.
-    const [stockfish, premoveEngine] = await Promise.all([
-      createStockfishEngine({
-        onProgress(progress) {
-          state.engineProgress = progress;
-          render();
-        },
-      }),
-      loadPremoveEngine(),
-    ]);
-    state.engine = stockfish;
-    state.premoveEngine = premoveEngine;
+    // The premove-aware opponent is bundled WebAssembly; loading takes a few milliseconds.
+    state.engine = await loadPremoveEngine();
     state.screen = "index";
     render();
   } catch (error) {
     state.engine = null;
-    state.premoveEngine = null;
     state.error = error;
     state.screen = "error";
     render();
@@ -533,7 +482,7 @@ function selectSquare(square) {
     }
   }
 
-  const piece = new Chess(state.snapshot.fen).get(square);
+  const piece = parsePlacement(state.snapshot.fen).get(square);
   if (piece?.color === state.snapshot.playerColor) {
     state.selectedSquare = square;
   } else if (state.selectedSquare) {
@@ -551,10 +500,9 @@ async function submitPremoves() {
   try {
     // The opponent knows the whole submitted plan and plays the strongest defence against it.
     const opponent = createPremoveOpponent({
-      engine: state.premoveEngine,
+      engine: state.engine,
       puzzleFen: state.puzzle.fen,
       premoves: state.session.snapshot().premoves,
-      fallback: state.engine,
     });
     await state.session.play(opponent, {
       delayMs: 1_000,
@@ -646,7 +594,7 @@ app.addEventListener("dragstart", (event) => {
     return;
   }
   const square = squareElement.dataset.square;
-  const piece = new Chess(state.snapshot.fen).get(square);
+  const piece = parsePlacement(state.snapshot.fen).get(square);
   if (piece?.color !== state.snapshot.playerColor) {
     event.preventDefault();
     return;

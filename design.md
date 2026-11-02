@@ -15,7 +15,7 @@ We are building a chess practice game focused on vision. Each puzzle presents a 
 
 ## Opponent AI
 
-- We use a available free chess engine to make moves, preferably stockfish. The engine should be downloaded and cached before the game can be played, with a nice bit of user interface to indicate if the engine is downloading. The engine chosen should be no larger than 50MB.
+- The opponent knows the player's whole premove list (it is submitted before play starts) and plays the defence that beats it if one exists, choosing the one that ends the game soonest; otherwise it plays the defence that survives longest. It is our own engine (`premove-puzzles/engine/src/refute.hpp`) compiled to WebAssembly and bundled with the app, so there is nothing to download. (This replaced Stockfish, which plays good chess but does not look for the reply that breaks a premove plan.)
 - The engine should be able to respond to moves quickly, ideally within 500ms, to maintain a smooth gameplay experience.
 - The engine should be able to handle all standard chess rules, including castling, en passant, and promotion.
 
@@ -35,12 +35,12 @@ We are building a chess practice game focused on vision. Each puzzle presents a 
 - The backend should be developed first. We should be able to play the entirety of the game and validate the entirety of the behaviour just through the interface or API or the backend. This should be developed, validated and tested rigourously before developing a frontend.
 
 ## User interface
-- First, the engine needs to be downloaded. Show a clear indication of that, including a progress bar.
+- First, the opponent engine loads (it is bundled, so this takes a moment at most). Show a brief loading screen while it does.
 - After that is done, we land on an "index" page showing all of the available levels. Only level 1 is unlocked to start. Each level on this index page is a square-ish icon indicating the number and it's current state, either locked, unlocked, or completed. Use colors.
 - Clicking into a level takes the user to the chessboard with the level state loaded. They are prompted to make their premoves.
 - There is a prominent button that says "I'm done premoving" or something like that. It unlocks after the first premove is made. Clicking it submits the premoves and begins the execution of the game.
 - The interface should be similar to chess.com's default interface. We should ideally use similar icons for the chess pieces and the chess board should appear simiarly.
-- The interface should provide clear feedback for invalid premoves (e.g. moving a piece to an illegal square, attempting to castle through check)
+- Premoves are validated like chess.com / lichess premoves: only against how the piece moves (pieces in the way, or the opponent king on the destination, do not block a premove, since the opponent moves in between). Give clear feedback for premoves the piece cannot make (e.g. a rook moving diagonally). Real legality, such as castling through check, is checked when the premove is played.
 - After the user finishes and clicks the button to proceed, we begin executing the premoves in sequence, updating the board state and providing visual feedback for each move. The user always moves first, then the chess engine.
 - The interface should indicate the outcome of the game once all premoves have been executed, such as victory, defeat, or draw. There should be celebration when we win and something more dejecting when we lose.
 - Afterwards, there is an option to retry the level, go to the next level, or go back to the main menu.

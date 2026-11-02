@@ -4,19 +4,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/prepare-engine-assets.js",
     "dev": "vite",
-    "prebuild": "node scripts/prepare-engine-assets.js",
     "build": "vite build",
-    "prepreview": "node scripts/prepare-engine-assets.js",
     "preview": "vite preview",
     "test": "node --test",
     "build:wasm": "make -C premove-puzzles/engine wasm",
     "check:wasm": "python3 premove-puzzles/tests/wasm_check.py"
   },
   "dependencies": {
-    "chess.js": "^1.4.0",
-    "stockfish": "16.0.0"
+    "chess.js": "^1.4.0"
   },
   "devDependencies": {
     "vite": "^8.3.5"
