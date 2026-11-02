@@ -62,13 +62,12 @@ test("knight arrows bend into an L, long leg first", () => {
   assert.deepEqual(wide.head[0], squareCenter("d2"));
 });
 
-test("layers render highlights and arrows, plus the arrow being dragged", () => {
-  const annotations = toggleHighlight(toggleArrow(EMPTY_ANNOTATIONS, "e2", "e4", "orange"), "d5", "red");
-  const layers = annotationLayers(annotations, { from: "g1", to: "f3", color: "green" });
+test("layers render the committed highlights and arrows", () => {
+  const annotations = toggleArrow(
+    toggleHighlight(toggleArrow(EMPTY_ANNOTATIONS, "e2", "e4", "orange"), "d5", "red"), "g1", "f3", "green");
+  const layers = annotationLayers(annotations);
   assert.equal((layers.highlights.match(/<rect /g) ?? []).length, 1);
   assert.equal((layers.arrows.match(/<g /g) ?? []).length, 2);
   assert.match(layers.arrows, /#9fcf3f/);
-  assert.equal(annotationLayers(annotations, { from: "g1", to: "g1", color: "green" }).arrows.match(/<g /g).length, 1,
-    "no preview arrow while the pointer is still on the starting square");
   assert.doesNotMatch(layers.highlights, /data-square/, "must not be mistaken for a board square");
 });
