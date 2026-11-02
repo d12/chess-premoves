@@ -306,9 +306,12 @@ static std::string analyze(Solver& S, const Request& rq, Result& R) {
 }
 
 // --------------------------------------------------------------------------- Stockfish client
+// Talks UCI over pipes. Survives the engine dying: calls report failure (-1) instead of
+// hanging or killing this process, and the caller can restart it.
 class Stockfish {
    public:
     bool start(const std::string& path, int threads = 1) {
+        stop();
         int in[2], out[2];
         if (pipe(in) || pipe(out)) return false;
         pid = fork();
@@ -326,31 +329,33 @@ class Stockfish {
         close(out[1]);
         wr = fdopen(in[1], "w");
         rd = fdopen(out[0], "r");
+        alive = true;
         send("uci");
-        if (!waitFor("uciok")) return false;
+        if (!waitFor("uciok")) return fail();
         send("setoption name Threads value " + std::to_string(threads));
         send("setoption name Hash value 16");
         send("isready");
-        return waitFor("readyok");
+        if (!waitFor("readyok")) return fail();
+        return alive;
     }
-    ~Stockfish() {
-        if (wr) {
-            send("quit");
-            fclose(wr);
-        }
-        if (rd) fclose(rd);
-        if (pid > 0) waitpid(pid, nullptr, 0);
-    }
-    // Returns mate distance for side to move (>0), 0 if no mate found within budget.
+    ~Stockfish() { stop(); }
+
+    // Mate distance for the side to move (>0), 0 if none found within the budget,
+    // -1 if the engine died while thinking.
     int mateScore(const std::string& fen, int nodes) {
+        if (!alive) return -1;
         send("ucinewgame");
         send("position fen " + fen);
         send("go nodes " + std::to_string(nodes));
         char buf[4096];
         int mate = 0;
-        while (fgets(buf, sizeof buf, rd)) {
+        bool done = false;
+        while (alive && fgets(buf, sizeof buf, rd)) {
             std::string l(buf);
-            if (l.rfind("bestmove", 0) == 0) break;
+            if (l.rfind("bestmove", 0) == 0) {
+                done = true;
+                break;
+            }
             auto p = l.find(" score ");
             if (p != std::string::npos) {
                 if (l.compare(p + 7, 5, "mate ") == 0)
@@ -359,21 +364,52 @@ class Stockfish {
                     mate = 0;
             }
         }
+        if (!done) {
+            fail();
+            return -1;
+        }
         return mate > 0 ? mate : 0;
     }
 
    private:
     pid_t pid = -1;
     FILE *wr = nullptr, *rd = nullptr;
+    bool alive = false;
+
     void send(const std::string& s) {
-        fputs((s + "\n").c_str(), wr);
-        fflush(wr);
+        if (!alive) return;
+        if (fputs((s + "\n").c_str(), wr) < 0 || fflush(wr) != 0) alive = false;
     }
     bool waitFor(const std::string& tok) {
         char buf[4096];
-        while (fgets(buf, sizeof buf, rd))
+        while (alive && fgets(buf, sizeof buf, rd))
             if (std::string(buf).rfind(tok, 0) == 0) return true;
         return false;
+    }
+    bool fail() {
+        alive = false;
+        stop();
+        return false;
+    }
+    void stop() {
+        if (wr) {
+            if (alive) {
+                fputs("quit\n", wr);
+                fflush(wr);
+            }
+            fclose(wr);
+            wr = nullptr;
+        }
+        if (rd) {
+            fclose(rd);
+            rd = nullptr;
+        }
+        if (pid > 0) {
+            kill(pid, SIGTERM);
+            waitpid(pid, nullptr, 0);
+            pid = -1;
+        }
+        alive = false;
     }
 };
 
@@ -550,6 +586,20 @@ class Generator {
     double solveMs = 0, sfMs = 0, noMateMs = 0, analyzeMs = 0;
 
     int rnd(int n) { return (int)(rng() % (uint64_t)n); }
+
+    // Stockfish mate score with recovery: if the engine dies on a position, report the
+    // position (Python collects these into stockfish-errors.log), restart it and treat the
+    // answer as "no mate seen". After repeated deaths, stop using Stockfish in this worker.
+    int sfRestarts = 0;
+    int sfMate(const std::string& fen) {
+        int m = sf.mateScore(fen, O.sfNodes);
+        if (m >= 0) return m;
+        sfRestarts++;
+        std::cerr << "warning: stockfish died on " << fen << "\n" << std::flush;
+        sfOk = sfRestarts <= 5 && sf.start(O.sfPath);
+        if (!sfOk) std::cerr << "warning: stockfish disabled in this worker after repeated failures\n" << std::flush;
+        return 0;
+    }
 
     int sampleBlackKing() {
         // Edge-biased: mates live near edges and corners.
@@ -787,7 +837,7 @@ class Generator {
         // Optional hard pre-screen by Stockfish (fast but drops many genuine puzzles; off by default).
         if (sfOk && O.sfPrescreen) {
             auto t = Clock::now();
-            int m = sf.mateScore(fen, O.sfNodes);
+            int m = sfMate(fen);
             sfMs += msSince(t);
             if (m == 0 || m > O.maxN + 2) {
                 sfReject++;
@@ -823,7 +873,7 @@ class Generator {
         }
         if (sfOk && tbv <= 0) {
             auto ts = Clock::now();
-            int m = sf.mateScore(fen, O.sfNodes);
+            int m = sfMate(fen);
             sfMs += msSince(ts);
             sfSaw = (m > 0 && m <= O.maxN + 2);
             S.nodeLimit = sfSaw ? O.nodes : O.missBudget;
@@ -1025,6 +1075,8 @@ int main(int argc, char** argv) {
                 if ((o.require & (1 << pt)) && sp.white.find(PT_CH[pt]) == std::string::npos) ok = false;
             if (ok) o.specs.push_back(sp);
         }
+        // a dead Stockfish must not kill the worker when we write to it
+        signal(SIGPIPE, SIG_IGN);
         if (o.specs.empty()) {
             std::cerr << "no material spec contains all required piece types\n";
             return 2;

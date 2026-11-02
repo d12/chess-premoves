@@ -92,6 +92,10 @@ on a 3090. The CPU and CUDA builders share the same per-position code
 |---|---|
 | `--min-moves N` | minimum premoves needed (the puzzle's `number_of_moves`) |
 | `--max-moves N` | upper bound searched (default 6; 7–8 works but each extra move costs a lot more) |
+
+The batch is spread evenly over the lengths in that range (`--min-moves 2` with the default
+maximum gives some 2-, 3-, 4-, 5- and 6-movers), so for easy puzzles only use e.g.
+`--min-moves 2 --max-moves 3`. Within one length, the interest score decides.
 | `--pieces N,B` | these piece types must move in a shortest solution (`Q R B N P K` or names) |
 | `--strict` | …and in **every** shortest solution (no way around using them) |
 | `--material KQR-K,KRB-KP` | material to sample, white-black; `:weight` sets frequency |

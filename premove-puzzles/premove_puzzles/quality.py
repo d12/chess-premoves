@@ -212,24 +212,30 @@ class Archive:
                     del self.cells[k]
                 return
 
-    def select(self, count: int, material_penalty: float = 2.0, movers_penalty: float = 1.0,
-               length_penalty: float = 0.5) -> list[Scored]:
-        """Greedy pick: best score, discounted for repeating material / working pieces / length
-        already in the batch, so a batch reads as varied rather than ten takes on one idea."""
-        pool = sorted(self.all(), key=lambda x: -x.score)
+    def select(self, count: int, material_penalty: float = 2.0, movers_penalty: float = 1.0) -> list[Scored]:
+        """Pick a batch spread evenly over the puzzle lengths found (shortest first in each
+        round), so asking for 2-6 moves gives easy and hard puzzles rather than only the
+        longest; within a length, best score first, discounted for repeating material or the
+        same working pieces already in the batch."""
+        by_len: dict[int, list[Scored]] = {}
+        for x in self.all():
+            by_len.setdefault(x.data["n"], []).append(x)
         out: list[Scored] = []
         mat: collections.Counter = collections.Counter()
         mov: collections.Counter = collections.Counter()
-        ln: collections.Counter = collections.Counter()
-        while pool and len(out) < count:
-            def adjusted(x: Scored) -> float:
-                d = x.data
-                return (x.score - material_penalty * mat[d["material"]]
-                        - movers_penalty * mov[d.get("moved_types", "")] - length_penalty * ln[d["n"]])
-            best = max(pool, key=adjusted)
-            pool.remove(best)
-            out.append(best)
-            mat[best.data["material"]] += 1
-            mov[best.data.get("moved_types", "")] += 1
-            ln[best.data["n"]] += 1
-        return out
+
+        def adjusted(x: Scored) -> float:
+            d = x.data
+            return x.score - material_penalty * mat[d["material"]] - movers_penalty * mov[d.get("moved_types", "")]
+
+        while len(out) < count and any(by_len.values()):
+            for n in sorted(by_len):
+                pool = by_len[n]
+                if not pool or len(out) >= count:
+                    continue
+                best = max(pool, key=adjusted)
+                pool.remove(best)
+                out.append(best)
+                mat[best.data["material"]] += 1
+                mov[best.data.get("moved_types", "")] += 1
+        return sorted(out, key=lambda x: (x.data["n"], -x.score))

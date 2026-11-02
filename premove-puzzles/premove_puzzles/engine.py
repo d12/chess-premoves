@@ -152,6 +152,7 @@ class GeneratorPool:
         self.finished_stats: list[dict] = []
         self.errors: dict[int, list[str]] = {}
         self.crashes: list[str] = []
+        self.stockfish_warnings: list[str] = []
         self.spawned = 0
         for slot in range(workers):
             self._spawn(slot)
@@ -186,8 +187,11 @@ class GeneratorPool:
 
     def _drain(self, slot: int, p: subprocess.Popen):
         for line in p.stderr:
+            line = line.rstrip()
+            if line.startswith("warning: stockfish"):
+                self.stockfish_warnings.append(line)
             buf = self.errors.setdefault(slot, [])
-            buf.append(line.rstrip())
+            buf.append(line)
             del buf[:-5]
 
     def handle_exit(self, slot: int) -> bool:

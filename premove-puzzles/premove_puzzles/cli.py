@@ -181,7 +181,9 @@ def cmd_generate(a):
                     d["canonical"] = key
                     sc = score(d, weights, min_pieces=min_pieces)
                     if archive.would_admit(sc):
-                        if annot:
+                        # The Stockfish check is the slow part of this loop; once time is up,
+                        # drain the remaining candidates without it so the run ends on time.
+                        if annot and pool.remaining() > 0:
                             d.update(annot.annotate(d))
                             sc = score(d, weights, min_pieces=min_pieces)
                         archive.add(sc)
@@ -200,6 +202,17 @@ def cmd_generate(a):
             annot.close()
     if sys.stderr.isatty():
         err("")
+    sf_problems = len(pool.stockfish_warnings) + (annot.total_failures if annot else 0)
+    if pool.stockfish_warnings:
+        from .sftools import ERROR_LOG
+        with ERROR_LOG.open("a") as f:
+            for w in pool.stockfish_warnings:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tworker\t{w}\n")
+    if sf_problems:
+        from .sftools import ERROR_LOG
+        err(f"warning: Stockfish failed {sf_problems} time(s) and was restarted"
+            + (" (its check was switched off for the rest of the run)" if annot and annot.disabled else "")
+            + f"; positions are in {ERROR_LOG.resolve()}")
     if pool.crashes:
         err(f"warning: {len(pool.crashes)} worker crash(es), restarted automatically; last error: {pool.crashes[-1]}")
     st = pool.totals()
@@ -208,9 +221,7 @@ def cmd_generate(a):
         + (f", already known {known}" if known else ""))
 
     picked = []
-    for sc in archive.select(a.count + 20):
-        if len(picked) == a.count:
-            break
+    for sc in archive.select(a.count):
         ok, why = verify_plan(sc.fen, sc.data["plan_uci"])
         if not ok:  # should never happen; independent check of the engine
             err(f"verification failed, dropping {sc.fen}: {why}")
@@ -564,8 +575,10 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("generate", aliases=["gen"], help="find candidate puzzles")
-    g.add_argument("--min-moves", type=int, default=3, help="minimum premoves needed (default 3)")
-    g.add_argument("--max-moves", type=int, help="maximum premoves (default from config, 6)")
+    g.add_argument("--min-moves", type=int, default=3,
+                   help="minimum premoves needed (default 3); the batch is spread evenly over min..max")
+    g.add_argument("--max-moves", type=int, help="maximum premoves (default from config, 6); "
+                   "e.g. --min-moves 2 --max-moves 3 for easy puzzles only")
     g.add_argument("--pieces", help="piece types that must move in a shortest solution, e.g. 'N,B' or 'knight'")
     g.add_argument("--strict", action="store_true", help="--pieces must move in EVERY shortest solution")
     g.add_argument("--material", help="comma list like KQR-K,KRB-KP (white-black, optional :weight)")
