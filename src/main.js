@@ -548,6 +548,7 @@ async function submitPremoves() {
     });
     await state.session.play(opponent, {
       delayMs: 1_000,
+      startDelayMs: 500,
       onUpdate(snapshot) {
         const previousMove = state.snapshot?.lastMove;
         const currentMove = snapshot.lastMove;
