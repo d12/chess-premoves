@@ -170,3 +170,44 @@ test("an opponent capture can invalidate a later premove", async () => {
   assert.match(result.message, /made your next premove illegal/);
   assert.equal(new Chess(result.fen).get("a2").color, "b");
 });
+
+test("a win is perfect only when it uses no more premoves than the puzzle's minimum", async () => {
+  const replies = () => {
+    const moves = ["c6b7", "b7a8"];
+    let i = 0;
+    return { async bestMove() { return moves[i++]; } };
+  };
+  const line = ["e1c1", "d2b2", "c1a1"];
+
+  const atMinimum = createPremoveGame({ ...EXAMPLE, number_of_moves: 3 });
+  queueAll(atMinimum, line);
+  const perfect = await atMinimum.play(replies(), { delayMs: 0 });
+  assert.equal(perfect.outcome, "victory");
+  assert.equal(perfect.perfect, true);
+  assert.equal(perfect.minimumMoves, 3);
+  assert.equal(perfect.movesUsed, 3);
+
+  // same win, but this puzzle claims it can be done in 2: not perfect
+  const aboveMinimum = createPremoveGame({ ...EXAMPLE, number_of_moves: 2 });
+  queueAll(aboveMinimum, line);
+  const plain = await aboveMinimum.play(replies(), { delayMs: 0 });
+  assert.equal(plain.outcome, "victory");
+  assert.equal(plain.perfect, false);
+
+  // puzzles without a known minimum are never "perfect"
+  const unknown = createPremoveGame(EXAMPLE);
+  queueAll(unknown, line);
+  const result = await unknown.play(replies(), { delayMs: 0 });
+  assert.equal(result.perfect, false);
+  assert.equal(result.minimumMoves, null);
+});
+
+test("a defeat is never perfect", async () => {
+  const game = createPremoveGame({ ...EXAMPLE, number_of_moves: 3 });
+  queueAll(game, ["e1c1", "d2b2", "c1b1"]);
+  const replies = ["c6b5", "b5a4"];
+  let i = 0;
+  const result = await game.play({ async bestMove() { return replies[i++]; } }, { delayMs: 0 });
+  assert.equal(result.outcome, "defeat");
+  assert.equal(result.perfect, false);
+});

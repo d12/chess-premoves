@@ -101,25 +101,30 @@ function renderError() {
   `;
 }
 
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
 function renderIndex() {
   const completedCount = state.progressStore.completedIds().length;
+  const perfectedCount = state.progressStore.perfectedIds().length;
   const levelCards = PUZZLES.map((puzzle) => {
     const completed = state.progressStore.isCompleted(puzzle.id);
+    const perfected = state.progressStore.isPerfected(puzzle.id);
     const unlocked = state.progressStore.isUnlocked(puzzle.id);
-    const status = completed ? "Completed" : unlocked ? "Ready to play" : "Locked";
+    const status = perfected ? "Perfected" : completed ? "Completed" : unlocked ? "Ready to play" : "Locked";
+    const minimum = puzzle.number_of_moves ? ` · ${plural(puzzle.number_of_moves, "move")}` : "";
     return `
       <button
-        class="level-card ${completed ? "is-complete" : ""} ${unlocked ? "" : "is-locked"}"
+        class="level-card ${perfected ? "is-perfect" : completed ? "is-complete" : ""} ${unlocked ? "" : "is-locked"}"
         type="button"
         data-action="open-puzzle"
         data-puzzle-id="${puzzle.id}"
         ${unlocked ? "" : "disabled"}
-        aria-label="Level ${puzzle.id}, ${status}"
+        aria-label="Level ${puzzle.id}, ${status}${puzzle.number_of_moves ? `, perfect in ${plural(puzzle.number_of_moves, "premove")}` : ""}"
       >
         <span class="level-number">${puzzle.id}</span>
-        <span class="level-mark" aria-hidden="true">${completed ? "✓" : unlocked ? "→" : "•"}</span>
+        <span class="level-mark" aria-hidden="true">${perfected ? "★" : completed ? "✓" : unlocked ? "→" : "•"}</span>
         <span class="level-title">LEVEL ${puzzle.id}</span>
-        <span class="level-status">${status}</span>
+        <span class="level-status">${status}${minimum}</span>
       </button>
     `;
   }).join("");
@@ -140,11 +145,11 @@ function renderIndex() {
           </div>
           <div class="completion-count">
             <strong>${completedCount}<span> / ${PUZZLES.length}</span></strong>
-            <small>completed</small>
+            <small>completed${perfectedCount ? ` · <span class="perfect-count">★ ${perfectedCount} perfect</span>` : ""}</small>
           </div>
         </div>
         <div class="level-grid">${levelCards}</div>
-        <p class="unlock-note">Complete a level to unlock the next one.</p>
+        <p class="unlock-note">Complete a level to unlock the next one. Solve it in the minimum number of premoves to perfect it <span class="perfect-star" aria-hidden="true">★</span></p>
       </section>
       <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
     </main>
@@ -254,12 +259,32 @@ function renderOutcome() {
 
   const victory = outcome === "victory";
   const draw = outcome === "draw";
+  const { perfect, minimumMoves, movesUsed } = state.snapshot;
+  if (victory && perfect) {
+    return `
+    <div class="outcome-card is-perfect" role="status">
+      <p class="eyebrow">Perfect solve</p>
+      <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
+      <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
+      ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
+      <div class="outcome-actions">
+        ${nextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
+        <button class="secondary-button" type="button" data-action="retry-puzzle">Play again</button>
+        <button class="text-button" type="button" data-action="home">Puzzle index</button>
+      </div>
+    </div>
+  `;
+  }
   const title = victory ? "Checkmate!" : draw ? "Draw" : "Not this time";
+  const perfectHint = victory && minimumMoves
+    ? `<p class="perfect-hint">You used ${plural(movesUsed, "premove")}; it can be done in ${minimumMoves}. Retry for a perfect <span aria-hidden="true">★</span></p>`
+    : "";
   return `
     <div class="outcome-card ${victory ? "is-victory" : draw ? "is-draw" : "is-defeat"}" role="status">
       <p class="eyebrow">${victory ? "Beautifully seen" : draw ? "The position is level" : "Keep training"}</p>
       <h3>${title}</h3>
       <p>${escapeHTML(message)}</p>
+      ${perfectHint}
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
         <button class="secondary-button" type="button" data-action="retry-puzzle">Retry level</button>
@@ -303,6 +328,11 @@ function renderPuzzle() {
           </button>
           <p class="eyebrow">Level ${state.puzzle.id} of ${PUZZLES.length}</p>
           <h1>${escapeHTML(state.puzzle.title)}</h1>
+          ${state.puzzle.number_of_moves ? `
+            <p class="par-line">
+              <span class="par-chip">Perfect in ${plural(state.puzzle.number_of_moves, "premove")}</span>
+              ${state.progressStore.isPerfected(state.puzzle.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
+            </p>` : ""}
         </div>
 
         <section class="board-column" aria-label="Puzzle board">
@@ -534,7 +564,7 @@ async function submitPremoves() {
         state.snapshot = snapshot;
         if (snapshot.phase === "complete" && snapshot.outcome === "victory") {
           try {
-            state.progressStore.markCompleted(state.puzzle.id);
+            state.progressStore.markCompleted(state.puzzle.id, { perfect: snapshot.perfect });
             state.progressError = "";
           } catch (error) {
             state.progressError = error.message;

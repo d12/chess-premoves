@@ -35,3 +35,32 @@ test("invalid saved progress is surfaced instead of silently discarded", () => {
     /not valid JSON/,
   );
 });
+
+test("perfect wins are remembered separately and imply completion", () => {
+  const storage = memoryStorage();
+  const progress = createProgressStore(storage);
+  progress.markCompleted("1");
+  assert.equal(progress.isPerfected("1"), false);
+  progress.markCompleted("1", { perfect: true }); // a later perfect replay upgrades it
+  assert.equal(progress.isPerfected("1"), true);
+  progress.markCompleted("2", { perfect: true });
+  assert.equal(progress.isCompleted("2"), true);
+  progress.markCompleted("2"); // a later non-perfect win does not take it away
+  const reloaded = createProgressStore(storage);
+  assert.deepEqual(reloaded.perfectedIds().sort(), ["1", "2"]);
+  assert.deepEqual(reloaded.completedIds().sort(), ["1", "2"]);
+});
+
+test("progress saved before perfect solves existed still loads", () => {
+  const progress = createProgressStore(memoryStorage(JSON.stringify({ completedIds: ["1"] })));
+  assert.equal(progress.isCompleted("1"), true);
+  assert.equal(progress.isPerfected("1"), false);
+  assert.deepEqual(progress.perfectedIds(), []);
+});
+
+test("an invalid perfected list is surfaced", () => {
+  assert.throws(
+    () => createProgressStore(memoryStorage(JSON.stringify({ completedIds: ["1"], perfectedIds: [1] }))),
+    /invalid format/,
+  );
+});

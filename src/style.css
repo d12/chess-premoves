@@ -17,6 +17,10 @@
   --green-bright: #72955e;
   --green-pale: #e7efe1;
   --red: #c6463f;
+  --gold: #b8860b;
+  --gold-ink: #7d5c06;
+  --gold-pale: #fbf0c9;
+  --gold-border: #e1c262;
 }
 
 * {
@@ -277,6 +281,32 @@ p {
 .level-card.is-complete {
   border-color: #8eaa7a;
   background: linear-gradient(145deg, #e8f1e2, #dce9d5);
+}
+
+/* Perfected: solved in the minimum number of premoves */
+.level-card.is-perfect {
+  border-color: var(--gold-border);
+  color: var(--gold-ink);
+  background: linear-gradient(145deg, #fef8e4, #f6e5ad);
+}
+
+.level-card.is-perfect:hover:not(:disabled) {
+  border-color: #c99f2a;
+  background: linear-gradient(145deg, #fffaea, #f4df9c);
+}
+
+.level-card.is-perfect .level-number {
+  color: rgba(160, 118, 8, 0.2);
+}
+
+.level-card.is-perfect .level-mark,
+.perfect-star,
+.perfect-count {
+  color: var(--gold);
+}
+
+.level-card.is-perfect .level-status {
+  color: #8a6a12;
 }
 
 .level-card.is-locked,
@@ -794,6 +824,48 @@ p {
   color: #3d6033;
 }
 
+.outcome-card.is-perfect {
+  border-color: var(--gold-border);
+  background: linear-gradient(145deg, #fffaea, var(--gold-pale));
+}
+
+.outcome-card.is-perfect h3 {
+  color: var(--gold-ink);
+}
+
+.outcome-card > p.perfect-hint {
+  margin: 8px 0 0;
+  color: #8a6a12;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.par-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.par-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid #cfdcc5;
+  border-radius: 999px;
+  color: var(--green);
+  background: var(--green-pale);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.par-chip.is-perfect {
+  border-color: var(--gold-border);
+  color: var(--gold-ink);
+  background: var(--gold-pale);
+}
+
 .outcome-card.is-defeat {
   border-color: #ead1cd;
   background: #fbf1ef;
@@ -1097,6 +1169,10 @@ p {
   .level-title,
   .level-status {
     display: none;
+  }
+
+  .level-card.is-perfect .level-number {
+    color: var(--gold-ink);
   }
 
   .app-footer {

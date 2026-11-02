@@ -47,6 +47,14 @@ The planning board shows your pieces after the queued premoves and the opponent'
 where they stand now. A premove onto the square of an opponent piece removes that piece from
 the preview, except the king, which is only hidden while your piece is on its square.
 
+## Perfect solves
+
+Every level shows its minimum ("Perfect in 4 premoves", from `number_of_moves` in
+`src/game/puzzles.json`). Winning with no more premoves than that is a **perfect** solve:
+it gets its own result card, and the level turns gold with a star on the index. A plain win
+shows how many premoves were used against the minimum. Perfected levels are stored next to
+completed ones in the browser (`perfectedIds`); progress saved before this feature still loads.
+
 ## Puzzles
 
 Puzzles live in `src/game/puzzles.json` and are numbered 1..N; each unlocks when the one

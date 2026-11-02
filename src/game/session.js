@@ -52,6 +52,10 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
   let outcome = null;
   let message = "";
   let lastMove = null;
+  // A win is "perfect" when it used no more premoves than the puzzle's minimum
+  // (puzzle.number_of_moves, the length of the shortest solution).
+  const minimumMoves = Number.isInteger(puzzle.number_of_moves) ? puzzle.number_of_moves : null;
+  let perfect = false;
 
   function previewFen() {
     return `${placementToFen(preview.board)} ${playerColor} - - 0 1`;
@@ -62,6 +66,9 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       phase,
       outcome,
       message,
+      perfect,
+      minimumMoves,
+      movesUsed: premoves.length,
       fen: phase === "planning" ? previewFen() : actual.fen(),
       premoves: premoves.map((move) => ({ ...move })),
       lastMove: lastMove ? { ...lastMove } : null,
@@ -171,6 +178,7 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       await publishMove(playerMove);
 
       if (actual.isCheckmate()) {
+        perfect = minimumMoves !== null && premoves.length <= minimumMoves;
         return finish("victory", "Checkmate! You saw the whole combination.");
       }
       if (actual.isDraw()) {

@@ -9,6 +9,7 @@ export function createProgressStore(storage = globalThis.localStorage) {
 
   const puzzleIds = PUZZLES.map((puzzle) => puzzle.id);
   let completed = new Set();
+  let perfected = new Set(); // solved in the minimum number of premoves
   let saved;
   try {
     saved = storage.getItem(STORAGE_KEY);
@@ -23,14 +24,16 @@ export function createProgressStore(storage = globalThis.localStorage) {
     } catch (error) {
       throw new Error("Saved puzzle progress is not valid JSON.", { cause: error });
     }
+    const validIds = (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "string");
     if (
       !parsed
-      || !Array.isArray(parsed.completedIds)
-      || parsed.completedIds.some((id) => typeof id !== "string")
+      || !validIds(parsed.completedIds)
+      || (parsed.perfectedIds !== undefined && !validIds(parsed.perfectedIds)) // absent in older saves
     ) {
       throw new Error("Saved puzzle progress has an invalid format.");
     }
     completed = new Set(parsed.completedIds);
+    perfected = new Set(parsed.perfectedIds ?? []);
   }
 
   function isCompleted(id) {
@@ -45,7 +48,12 @@ export function createProgressStore(storage = globalThis.localStorage) {
     return puzzleIds.slice(0, index).every((puzzleId) => completed.has(puzzleId));
   }
 
-  function markCompleted(id) {
+  function isPerfected(id) {
+    return perfected.has(String(id));
+  }
+
+  /** Record a win; `perfect` if it used the minimum number of premoves. */
+  function markCompleted(id, { perfect = false } = {}) {
     const puzzleId = String(id);
     if (!puzzleIds.includes(puzzleId)) {
       throw new RangeError(`Unknown puzzle: ${puzzleId}`);
@@ -53,30 +61,38 @@ export function createProgressStore(storage = globalThis.localStorage) {
     if (!isUnlocked(puzzleId)) {
       throw new Error(`Cannot complete locked puzzle ${puzzleId}.`);
     }
-    if (completed.has(puzzleId)) {
+    if (completed.has(puzzleId) && (!perfect || perfected.has(puzzleId))) {
       return;
     }
 
-    const nextCompleted = new Set(completed);
-    nextCompleted.add(puzzleId);
+    const nextCompleted = new Set(completed).add(puzzleId);
+    const nextPerfected = perfect ? new Set(perfected).add(puzzleId) : perfected;
     try {
       storage.setItem(STORAGE_KEY, JSON.stringify({
         completedIds: [...nextCompleted],
+        perfectedIds: [...nextPerfected],
       }));
     } catch (error) {
       throw new Error("Unable to save puzzle progress.", { cause: error });
     }
     completed = nextCompleted;
+    perfected = nextPerfected;
   }
 
   function completedIds() {
     return [...completed].filter((id) => puzzleIds.includes(id));
   }
 
+  function perfectedIds() {
+    return [...perfected].filter((id) => puzzleIds.includes(id));
+  }
+
   return Object.freeze({
     isCompleted,
+    isPerfected,
     isUnlocked,
     markCompleted,
     completedIds,
+    perfectedIds,
   });
 }
