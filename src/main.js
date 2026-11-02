@@ -42,7 +42,7 @@ const state = {
   pendingPieceMove: null,
   pendingCelebration: null,
   revealOutcome: false,
-  // right-click arrows and highlights; drawingArrow is the right-drag in progress
+  // right-click arrows and highlights; drawingArrow is where a right-drag started
   annotations: EMPTY_ANNOTATIONS,
   drawingArrow: null,
   interactionError: "",
@@ -209,7 +209,7 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
       `);
     }
   }
-  const layers = annotationLayers(state.annotations, state.drawingArrow);
+  const layers = annotationLayers(state.annotations);
   return `<div class="board" role="group" aria-label="Chessboard">
     <svg class="board-highlights" viewBox="0 0 8 8" aria-hidden="true">${layers.highlights}</svg>
     ${squares.join("")}
@@ -752,9 +752,9 @@ app.addEventListener("drop", (event) => {
 
 // ---- Right-click arrows and highlights (chess.com style) ----
 
-// Redraw just the annotation layers, so dragging an arrow doesn't rebuild the board.
+// Redraw just the annotation layers, without rebuilding the board.
 function updateAnnotationLayers() {
-  const layers = annotationLayers(state.annotations, state.drawingArrow);
+  const layers = annotationLayers(state.annotations);
   const highlights = app.querySelector(".board-highlights");
   const arrows = app.querySelector(".board-arrows");
   if (highlights) highlights.innerHTML = layers.highlights;
@@ -796,21 +796,11 @@ app.addEventListener("mousedown", (event) => {
   const from = squareAtPoint(event.clientX, event.clientY);
   if (from) {
     event.preventDefault();
-    state.drawingArrow = { from, to: from, color: annotationColor("arrow", event) };
+    state.drawingArrow = { from };
   }
 });
 
-window.addEventListener("mousemove", (event) => {
-  const drawing = state.drawingArrow;
-  if (!drawing) {
-    return;
-  }
-  const to = squareAtPoint(event.clientX, event.clientY) ?? drawing.from;
-  if (to !== drawing.to) {
-    state.drawingArrow = { ...drawing, to };
-    updateAnnotationLayers();
-  }
-});
+// Nothing is drawn while dragging; releasing the right button commits the arrow or highlight.
 
 window.addEventListener("mouseup", (event) => {
   const drawing = state.drawingArrow;

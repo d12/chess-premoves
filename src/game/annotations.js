@@ -104,13 +104,10 @@ function highlightSvg({ square, color }) {
 }
 
 // SVG contents for the two layers: highlights sit under the pieces, arrows over them.
-// `preview` is the arrow being dragged right now, if any.
-export function annotationLayers(annotations, preview = null) {
-  const arrows = preview && preview.from !== preview.to
-    ? [...annotations.arrows.filter((arrow) => arrow.from !== preview.from || arrow.to !== preview.to), preview]
-    : annotations.arrows;
+// Like chess.com, an arrow only appears once the right button is released.
+export function annotationLayers(annotations) {
   return {
     highlights: annotations.highlights.map(highlightSvg).join(""),
-    arrows: arrows.map(arrowSvg).join(""),
+    arrows: annotations.arrows.map(arrowSvg).join(""),
   };
 }
