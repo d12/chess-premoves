@@ -542,6 +542,12 @@ p {
   transform: rotate(-22deg) translate(-4%, 6%);
 }
 
+/* the square a piece is being dragged from: piece hidden, square marked like a selection */
+.square.is-drag-source .piece {
+  opacity: 0;
+}
+
+.square.is-drag-source,
 .square.is-selected {
   box-shadow: inset 0 0 0 3px rgba(246, 221, 80, 0.95);
 }
