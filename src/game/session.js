@@ -61,6 +61,22 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
     return `${placementToFen(preview.board)} ${playerColor} - - 0 1`;
   }
 
+  // Square of the checkmated king once the real game reaches mate, else null.
+  function matedKingSquare() {
+    if (phase === "planning" || !actual.isCheckmate()) {
+      return null;
+    }
+    const color = actual.turn();
+    for (const row of actual.board()) {
+      for (const piece of row) {
+        if (piece && piece.type === "k" && piece.color === color) {
+          return piece.square;
+        }
+      }
+    }
+    return null;
+  }
+
   function snapshot() {
     return {
       phase,
@@ -72,6 +88,7 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       fen: phase === "planning" ? previewFen() : actual.fen(),
       premoves: premoves.map((move) => ({ ...move })),
       lastMove: lastMove ? { ...lastMove } : null,
+      matedKing: matedKingSquare(),
       playerColor,
     };
   }

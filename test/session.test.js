@@ -133,6 +133,24 @@ test("a negative start delay is rejected", async () => {
   await assert.rejects(game.play({ async bestMove() { return "c6b7"; } }, { startDelayMs: -1 }), /Start delay/);
 });
 
+test("snapshots name the mated king's square from the moment of checkmate", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2b2", "c1a1"]);
+  assert.equal(game.snapshot().matedKing, null);
+  const replies = ["c6b7", "b7a8"];
+  const updates = [];
+  const result = await game.play({ async bestMove() { return replies.shift(); } }, {
+    delayMs: 0,
+    onUpdate(snapshot) { updates.push(snapshot); },
+  });
+
+  const mateMove = updates.find((snapshot) => snapshot.matedKing);
+  assert.equal(mateMove.phase, "playing", "known as soon as the mating move is shown");
+  assert.equal(mateMove.lastMove.to, "a1");
+  assert.equal(result.matedKing, "a8");
+  assert.ok(updates.filter((snapshot) => !snapshot.matedKing).every((snapshot) => snapshot.lastMove?.to !== "a1"));
+});
+
 test("promotion choices are explicit and a queued promotion changes the preview", () => {
   const game = createPremoveGame({ id: "promotion", fen: "7k/P7/8/8/8/8/8/7K w - - 0 1" });
   const promotions = game.legalMovesFrom("a7").filter((move) => move.to === "a8");
