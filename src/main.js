@@ -119,14 +119,15 @@ function renderIndex() {
     const completed = state.progressStore.isCompleted(puzzle.id);
     const perfected = state.progressStore.isPerfected(puzzle.id);
     const unlocked = state.progressStore.isUnlocked(puzzle.id);
-    const status = perfected ? "Perfected" : completed ? "Completed" : unlocked ? "Ready to play" : "Locked";
+    const status = !unlocked ? (import.meta.env.DEV ? "Locked · click to unlock" : "Locked")
+      : perfected ? "Perfected" : completed ? "Completed" : "Ready to play";
     return `
       <button
         class="level-card ${perfected ? "is-perfect" : completed ? "is-complete" : ""} ${unlocked ? "" : "is-locked"}"
         type="button"
         data-action="open-puzzle"
         data-puzzle-id="${puzzle.id}"
-        ${unlocked ? "" : "disabled"}
+        ${unlocked || import.meta.env.DEV ? "" : "disabled"}
         aria-label="Level ${puzzle.id}, ${status}"
       >
         <span class="level-number">${puzzle.id}</span>
@@ -158,6 +159,7 @@ function renderIndex() {
         </div>
         <div class="level-grid">${levelCards}</div>
         <p class="unlock-note">Complete a level to unlock the next one. Solve it in the minimum number of premoves to perfect it <span class="perfect-star" aria-hidden="true">★</span></p>
+        ${import.meta.env.DEV ? '<p class="unlock-note">Development: click a locked level to unlock and play it for this session.</p>' : ""}
       </section>
       <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
     </main>
@@ -282,7 +284,7 @@ function renderOutcome() {
       <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
-        ${nextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
+        ${canOpenNextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
         <button class="secondary-button" type="button" data-action="retry-puzzle">Play again</button>
         <button class="text-button" type="button" data-action="home">Puzzle index</button>
       </div>
@@ -302,7 +304,7 @@ function renderOutcome() {
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
         <button class="secondary-button" type="button" data-action="retry-puzzle">Retry level</button>
-        ${victory && nextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
+        ${victory && canOpenNextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
         <button class="text-button" type="button" data-action="home">Puzzle index</button>
       </div>
     </div>
@@ -312,6 +314,11 @@ function renderOutcome() {
 function nextPuzzle() {
   if (!state.puzzle) {
     return null;
+  }
+
+  function canOpenNextPuzzle() {
+    const next = nextPuzzle();
+    return next && (import.meta.env.DEV || state.progressStore.isUnlocked(next.id));
   }
   const index = PUZZLES.findIndex((puzzle) => puzzle.id === state.puzzle.id);
   return PUZZLES[index + 1] ?? null;
@@ -514,7 +521,7 @@ async function initializeApp() {
   render();
   try {
     if (!state.progressStore) {
-      state.progressStore = createProgressStore();
+      state.progressStore = createProgressStore(undefined, { allowDevUnlock: import.meta.env.DEV });
     }
     // The premove-aware opponent is bundled WebAssembly; loading takes a few milliseconds.
     state.engine = await loadPremoveEngine();
@@ -529,6 +536,9 @@ async function initializeApp() {
 }
 
 function openPuzzle(id) {
+  if (import.meta.env.DEV && !state.progressStore.isUnlocked(id)) {
+    state.progressStore.unlockForDevelopment(id);
+  }
   if (!state.progressStore.isUnlocked(id)) {
     return;
   }
@@ -688,7 +698,7 @@ app.addEventListener("click", (event) => {
       openPuzzle(state.puzzle.id);
     } else if (action === "next-puzzle") {
       const next = nextPuzzle();
-      if (next && state.progressStore.isUnlocked(next.id)) {
+      if (next) {
         openPuzzle(next.id);
       }
     } else if (action === "choose-promotion") {

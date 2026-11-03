@@ -317,6 +317,10 @@ p {
   cursor: not-allowed;
 }
 
+.level-card.is-locked:not(:disabled) {
+  cursor: pointer;
+}
+
 .level-number {
   position: absolute;
   top: 7px;

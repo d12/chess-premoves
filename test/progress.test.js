@@ -29,6 +29,25 @@ test("only the first puzzle is unlocked until the previous puzzle is completed",
   assert.deepEqual(createProgressStore(storage).completedIds(), ["1"]);
 });
 
+test("development unlocks allow individual puzzles without completing earlier ones", () => {
+  const storage = memoryStorage();
+  const progress = createProgressStore(storage, { allowDevUnlock: true });
+
+  assert.throws(() => progress.unlockForDevelopment("unknown"), /Unknown puzzle/);
+  progress.unlockForDevelopment("3");
+  assert.equal(progress.isUnlocked("2"), false);
+  assert.equal(progress.isUnlocked("3"), true);
+  progress.markCompleted("3", { perfect: true });
+  assert.deepEqual(progress.completedIds(), ["3"]);
+  assert.deepEqual(progress.perfectedIds(), ["3"]);
+
+  const reloaded = createProgressStore(storage, { allowDevUnlock: true });
+  assert.equal(reloaded.isUnlocked("3"), false);
+  assert.equal(reloaded.isCompleted("3"), true);
+  assert.throws(() => createProgressStore(storage).unlockForDevelopment("3"), /not enabled/);
+  assert.equal(createProgressStore(storage).isUnlocked("3"), false);
+});
+
 test("invalid saved progress is surfaced instead of silently discarded", () => {
   assert.throws(
     () => createProgressStore(memoryStorage("{invalid")),

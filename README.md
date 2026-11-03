@@ -9,6 +9,10 @@ npm install
 npm run dev
 ```
 
+In the development server, click a locked puzzle to unlock and play it without completing
+earlier levels. The unlock lasts until the page is reloaded; actual wins are saved normally.
+Production builds retain the usual sequential unlocking rules.
+
 Run the backend/game-logic tests and create a static production build with:
 
 ```sh

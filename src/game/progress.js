@@ -2,7 +2,7 @@ import { PUZZLES } from "./puzzles.js";
 
 const STORAGE_KEY = "chess-premove-progress-v1";
 
-export function createProgressStore(storage = globalThis.localStorage) {
+export function createProgressStore(storage = globalThis.localStorage, { allowDevUnlock = false } = {}) {
   if (!storage) {
     throw new Error("Browser storage is not available.");
   }
@@ -10,6 +10,7 @@ export function createProgressStore(storage = globalThis.localStorage) {
   const puzzleIds = PUZZLES.map((puzzle) => puzzle.id);
   let completed = new Set();
   let perfected = new Set(); // solved in the minimum number of premoves
+  const devUnlocked = new Set();
   let saved;
   try {
     saved = storage.getItem(STORAGE_KEY);
@@ -45,7 +46,19 @@ export function createProgressStore(storage = globalThis.localStorage) {
     if (index === -1) {
       return false;
     }
-    return puzzleIds.slice(0, index).every((puzzleId) => completed.has(puzzleId));
+    return devUnlocked.has(String(id))
+      || puzzleIds.slice(0, index).every((puzzleId) => completed.has(puzzleId));
+  }
+
+  function unlockForDevelopment(id) {
+    const puzzleId = String(id);
+    if (!allowDevUnlock) {
+      throw new Error("Development puzzle unlocking is not enabled.");
+    }
+    if (!puzzleIds.includes(puzzleId)) {
+      throw new RangeError(`Unknown puzzle: ${puzzleId}`);
+    }
+    devUnlocked.add(puzzleId);
   }
 
   function isPerfected(id) {
@@ -91,6 +104,7 @@ export function createProgressStore(storage = globalThis.localStorage) {
     isCompleted,
     isPerfected,
     isUnlocked,
+    unlockForDevelopment,
     markCompleted,
     completedIds,
     perfectedIds,
