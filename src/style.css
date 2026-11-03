@@ -949,6 +949,12 @@ p {
   letter-spacing: 0.02em;
 }
 
+.par-chip.is-attempts {
+  border-color: var(--surface-border);
+  color: var(--text-muted);
+  background: var(--surface-soft);
+}
+
 .par-chip.is-perfect {
   border-color: var(--gold-border);
   color: var(--gold-ink);

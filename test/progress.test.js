@@ -83,3 +83,31 @@ test("an invalid perfected list is surfaced", () => {
     /invalid format/,
   );
 });
+
+test("attempts are counted per puzzle and saved", () => {
+  const storage = memoryStorage();
+  const progress = createProgressStore(storage);
+  assert.equal(progress.attemptCount("1"), 0);
+  assert.equal(progress.recordAttempt("1"), 1);
+  assert.equal(progress.recordAttempt("1"), 2);
+  assert.equal(progress.recordAttempt("2"), 1, "locked puzzles can't be played, but counting is per id");
+  assert.throws(() => progress.recordAttempt("unknown"), /Unknown puzzle/);
+  progress.markCompleted("1", { perfect: true });
+
+  const reloaded = createProgressStore(storage);
+  assert.equal(reloaded.attemptCount("1"), 2, "completing a puzzle keeps its attempts");
+  assert.equal(reloaded.attemptCount(2), 1);
+  assert.equal(reloaded.isPerfected("1"), true, "recording attempts keeps completions");
+  reloaded.recordAttempt("1");
+  assert.deepEqual(createProgressStore(storage).completedIds(), ["1"]);
+  assert.equal(createProgressStore(storage).attemptCount("1"), 3);
+});
+
+test("progress saved before attempts existed still loads", () => {
+  const progress = createProgressStore(memoryStorage(JSON.stringify({ completedIds: ["1"], perfectedIds: [] })));
+  assert.equal(progress.attemptCount("1"), 0);
+  assert.throws(
+    () => createProgressStore(memoryStorage(JSON.stringify({ completedIds: [], attempts: { 1: -1 } }))),
+    /invalid format/,
+  );
+});
