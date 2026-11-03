@@ -8,6 +8,8 @@ const TERMINAL_VELOCITY = 260; // px/s, fall speed cap so pieces flutter down
 export const PALETTES = Object.freeze({
   victory: ["#587848", "#72955e", "#a9cc8a", "#e1c262", "#f4d35e", "#fffdf6", "#c6463f", "#6fa8dc"],
   perfect: ["#b8860b", "#d4a017", "#e1c262", "#f4d35e", "#ffe8a3", "#fff6d5", "#fffdf6"],
+  // for a win that wasn't perfect: beige, grey and a tired olive
+  meh: ["#d8d0bc", "#b5b0a5", "#a7a7a7", "#8b7d6b", "#c2bb8f"],
 });
 
 let overlay = null;
@@ -61,7 +63,7 @@ function teardown() {
 const random = (min, max) => min + Math.random() * (max - min);
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
 
-function makeParticle(x, y, angle, speed, palette, shapes, scale) {
+function makeParticle(x, y, angle, speed, palette, shapes, scale, life = [3, 4.4]) {
   const shape = pick(shapes);
   const size = random(7, 12) * scale;
   return {
@@ -80,7 +82,7 @@ function makeParticle(x, y, angle, speed, palette, shapes, scale) {
     wobble: random(0, Math.PI * 2),
     wobbleSpeed: random(3, 7),
     age: 0,
-    life: random(3, 4.4),
+    life: random(...life),
   };
 }
 
@@ -163,6 +165,19 @@ export function burst({ x, y, count = 140, palette = PALETTES.victory, shapes = 
     const angle = -Math.PI / 2 + random(-1.3, 1.3);
     const speed = random(700, 2000) * power * scale;
     particles.push(makeParticle(x, y, angle, speed, palette, shapes, scale));
+  }
+  start();
+}
+
+// A win, but not a perfect one: a dozen drab scraps that barely leave the king and flop
+// to the floor. A deliberately underwhelming "yay".
+export function fizzle({ x, y } = {}) {
+  const { height } = ensureOverlay();
+  const scale = Math.min(1.25, Math.max(0.75, height / 800)) * 0.9;
+  for (let index = 0; index < 12; index += 1) {
+    const angle = -Math.PI / 2 + random(-0.7, 0.7);
+    const speed = random(380, 640) * scale;
+    particles.push(makeParticle(x, y, angle, speed, PALETTES.meh, ["rect"], scale, [1.4, 2.2]));
   }
   start();
 }
