@@ -315,13 +315,13 @@ function nextPuzzle() {
   if (!state.puzzle) {
     return null;
   }
-
-  function canOpenNextPuzzle() {
-    const next = nextPuzzle();
-    return next && (import.meta.env.DEV || state.progressStore.isUnlocked(next.id));
-  }
   const index = PUZZLES.findIndex((puzzle) => puzzle.id === state.puzzle.id);
   return PUZZLES[index + 1] ?? null;
+}
+
+function canOpenNextPuzzle() {
+  const next = nextPuzzle();
+  return Boolean(next) && (import.meta.env.DEV || state.progressStore.isUnlocked(next.id));
 }
 
 function renderPuzzle() {
