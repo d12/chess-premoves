@@ -1,4 +1,4 @@
-import { burst, cannons, PALETTES } from "./effects/confetti.js";
+import { burst, cannons, fizzle, PALETTES } from "./effects/confetti.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import {
   annotationColor, annotationLayers, EMPTY_ANNOTATIONS, hasAnnotations, toggleArrow, toggleHighlight,
@@ -435,10 +435,11 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// Checkmate: the mated king wobbles and topples, the board thumps, and confetti bursts from
-// the king (gold stars for a perfect solve). Runs once, right after the mating move lands.
+// Checkmate: the mated king wobbles and topples. A perfect solve also thumps the board and
+// bursts gold confetti from the king; any other win gets a sad little fizzle of grey scraps,
+// as a hint that it could have been done in fewer moves. Runs once, as the mating move lands.
 function celebrateMate({ square, perfect }) {
-  navigator.vibrate?.([24, 40, 70]);
+  navigator.vibrate?.(perfect ? [24, 40, 70] : [15]);
   if (prefersReducedMotion()) {
     return; // the static red glow and tipped king (CSS) still mark the mate
   }
@@ -451,23 +452,24 @@ function celebrateMate({ square, perfect }) {
     { transform: "rotate(4deg)", offset: 0.58 },
     { transform: "rotate(-22deg) translate(-4%, 6%)" },
   ], { duration: 700, delay: 110, easing: "ease-out", fill: "backwards" });
-  app.querySelector(".board")?.animate?.([
-    { transform: "scale(1)" },
-    { transform: "scale(1.018)", offset: 0.35 },
-    { transform: "scale(1)" },
-  ], { duration: 360, delay: 110, easing: "cubic-bezier(0.3, 0.7, 0.4, 1)" });
+  if (perfect) {
+    app.querySelector(".board")?.animate?.([
+      { transform: "scale(1)" },
+      { transform: "scale(1.018)", offset: 0.35 },
+      { transform: "scale(1)" },
+    ], { duration: 360, delay: 110, easing: "cubic-bezier(0.3, 0.7, 0.4, 1)" });
+  }
 
   const rect = (king ?? app.querySelector(".board"))?.getBoundingClientRect();
   if (!rect) {
     return;
   }
-  setTimeout(() => burst({
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2,
-    count: perfect ? 160 : 140,
-    palette: perfect ? PALETTES.perfect : PALETTES.victory,
-    shapes: perfect ? ["star", "rect", "ribbon", "circle"] : ["rect", "ribbon", "circle"],
-  }), 260);
+  const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  if (perfect) {
+    setTimeout(() => burst({ ...origin, count: 160, palette: PALETTES.perfect, shapes: ["star", "rect", "ribbon", "circle"] }), 260);
+  } else {
+    setTimeout(() => fizzle(origin), 420); // a beat late, too
+  }
 }
 
 function render() {
