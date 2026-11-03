@@ -740,6 +740,18 @@ app.addEventListener("dragstart", (event) => {
       event.dataTransfer.setDragImage(pieceElement, pieceRect.width / 2, pieceRect.height / 2);
     }
   }
+  // Hide the piece on its square while it is being dragged, so it doesn't look duplicated.
+  // Deferred: the browser takes its picture of the dragged piece after this handler returns.
+  setTimeout(() => {
+    if (squareElement.isConnected) {
+      squareElement.classList.add("is-drag-source");
+    }
+  }, 0);
+});
+
+// A drag dropped off the board, or cancelled with Escape: put the piece back.
+app.addEventListener("dragend", () => {
+  app.querySelectorAll(".is-drag-source").forEach((element) => element.classList.remove("is-drag-source"));
 });
 
 app.addEventListener("dragover", (event) => {
@@ -755,8 +767,13 @@ app.addEventListener("drop", (event) => {
   }
   event.preventDefault();
   const from = event.dataTransfer?.getData("text/plain") || state.selectedSquare;
-  if (from) {
-    attemptMove(from, squareElement.dataset.square);
+  const to = squareElement.dataset.square;
+  if (from === to) {
+    // put back where it was picked up: leave it selected, no error
+    state.interactionError = "";
+    render();
+  } else if (from) {
+    attemptMove(from, to);
   }
 });
 
