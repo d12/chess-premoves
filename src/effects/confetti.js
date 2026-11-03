@@ -6,10 +6,9 @@ const DRAG = 2.6; // per second, horizontal and upward air resistance
 const TERMINAL_VELOCITY = 260; // px/s, fall speed cap so pieces flutter down
 
 export const PALETTES = Object.freeze({
-  victory: ["#587848", "#72955e", "#a9cc8a", "#e1c262", "#f4d35e", "#fffdf6", "#c6463f", "#6fa8dc"],
+  // any win: bright party colours (red, blue, green, yellow)
+  victory: ["#e63946", "#ff6b6b", "#1e88e5", "#64b5f6", "#43a047", "#81c784", "#fdd835", "#ffe066"],
   perfect: ["#b8860b", "#d4a017", "#e1c262", "#f4d35e", "#ffe8a3", "#fff6d5", "#fffdf6"],
-  // for a win that wasn't perfect: beige, grey and a tired olive
-  meh: ["#d8d0bc", "#b5b0a5", "#a7a7a7", "#8b7d6b", "#c2bb8f"],
 });
 
 let overlay = null;
@@ -165,19 +164,6 @@ export function burst({ x, y, count = 140, palette = PALETTES.victory, shapes = 
     const angle = -Math.PI / 2 + random(-1.3, 1.3);
     const speed = random(700, 2000) * power * scale;
     particles.push(makeParticle(x, y, angle, speed, palette, shapes, scale));
-  }
-  start();
-}
-
-// A win, but not a perfect one: a dozen drab scraps that barely leave the king and flop
-// to the floor. A deliberately underwhelming "yay".
-export function fizzle({ x, y } = {}) {
-  const { height } = ensureOverlay();
-  const scale = Math.min(1.25, Math.max(0.75, height / 800)) * 0.9;
-  for (let index = 0; index < 12; index += 1) {
-    const angle = -Math.PI / 2 + random(-0.7, 0.7);
-    const speed = random(380, 640) * scale;
-    particles.push(makeParticle(x, y, angle, speed, PALETTES.meh, ["rect"], scale, [1.4, 2.2]));
   }
   start();
 }
