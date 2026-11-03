@@ -349,11 +349,11 @@ function renderPuzzle() {
           </button>
           <p class="eyebrow">Level ${state.puzzle.id} of ${PUZZLES.length}</p>
           <h1>${escapeHTML(state.puzzle.title)}</h1>
-          ${state.puzzle.number_of_moves ? `
-            <p class="par-line">
-              <span class="par-chip">Perfect in ${plural(state.puzzle.number_of_moves, "premove")}</span>
-              ${state.progressStore.isPerfected(state.puzzle.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
-            </p>` : ""}
+          <p class="par-line">
+            ${state.puzzle.number_of_moves ? `<span class="par-chip">Perfect in ${plural(state.puzzle.number_of_moves, "premove")}</span>` : ""}
+            <span class="par-chip is-attempts">${plural(state.progressStore.attemptCount(state.puzzle.id), "attempt")}</span>
+            ${state.progressStore.isPerfected(state.puzzle.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
+          </p>
         </div>
 
         <section class="board-column" aria-label="Puzzle board">
@@ -618,6 +618,13 @@ function selectSquare(square) {
 async function submitPremoves() {
   state.interactionError = "";
   state.executionError = "";
+  // every submitted line counts as an attempt; shown on the puzzle page
+  try {
+    state.progressStore.recordAttempt(state.puzzle.id);
+    state.progressError = "";
+  } catch (error) {
+    state.progressError = error.message;
+  }
   try {
     // The opponent knows the whole submitted plan and plays the strongest defence against it.
     const opponent = createPremoveOpponent({

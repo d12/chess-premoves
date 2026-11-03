@@ -10,6 +10,7 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
   const puzzleIds = PUZZLES.map((puzzle) => puzzle.id);
   let completed = new Set();
   let perfected = new Set(); // solved in the minimum number of premoves
+  let attempts = {}; // puzzle id -> times a line was submitted
   const devUnlocked = new Set();
   let saved;
   try {
@@ -26,15 +27,32 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
       throw new Error("Saved puzzle progress is not valid JSON.", { cause: error });
     }
     const validIds = (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "string");
+    const validCounts = (counts) => counts !== null && typeof counts === "object" && !Array.isArray(counts)
+      && Object.values(counts).every((count) => Number.isInteger(count) && count >= 0);
     if (
       !parsed
       || !validIds(parsed.completedIds)
       || (parsed.perfectedIds !== undefined && !validIds(parsed.perfectedIds)) // absent in older saves
+      || (parsed.attempts !== undefined && !validCounts(parsed.attempts)) // absent in older saves
     ) {
       throw new Error("Saved puzzle progress has an invalid format.");
     }
     completed = new Set(parsed.completedIds);
     perfected = new Set(parsed.perfectedIds ?? []);
+    attempts = { ...(parsed.attempts ?? {}) };
+  }
+
+  function save(next) {
+    try {
+      storage.setItem(STORAGE_KEY, JSON.stringify({
+        completedIds: [...next.completed],
+        perfectedIds: [...next.perfected],
+        attempts: next.attempts,
+      }));
+    } catch (error) {
+      throw new Error("Unable to save puzzle progress.", { cause: error });
+    }
+    ({ completed, perfected, attempts } = next);
   }
 
   function isCompleted(id) {
@@ -78,18 +96,26 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
       return;
     }
 
-    const nextCompleted = new Set(completed).add(puzzleId);
-    const nextPerfected = perfect ? new Set(perfected).add(puzzleId) : perfected;
-    try {
-      storage.setItem(STORAGE_KEY, JSON.stringify({
-        completedIds: [...nextCompleted],
-        perfectedIds: [...nextPerfected],
-      }));
-    } catch (error) {
-      throw new Error("Unable to save puzzle progress.", { cause: error });
+    save({
+      completed: new Set(completed).add(puzzleId),
+      perfected: perfect ? new Set(perfected).add(puzzleId) : perfected,
+      attempts,
+    });
+  }
+
+  /** How many times a line has been submitted on this puzzle. */
+  function attemptCount(id) {
+    return attempts[String(id)] ?? 0;
+  }
+
+  /** Count a submitted line (an attempt); returns the new total for the puzzle. */
+  function recordAttempt(id) {
+    const puzzleId = String(id);
+    if (!puzzleIds.includes(puzzleId)) {
+      throw new RangeError(`Unknown puzzle: ${puzzleId}`);
     }
-    completed = nextCompleted;
-    perfected = nextPerfected;
+    save({ completed, perfected, attempts: { ...attempts, [puzzleId]: attemptCount(puzzleId) + 1 } });
+    return attempts[puzzleId];
   }
 
   function completedIds() {
@@ -106,6 +132,8 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     isUnlocked,
     unlockForDevelopment,
     markCompleted,
+    attemptCount,
+    recordAttempt,
     completedIds,
     perfectedIds,
   });
