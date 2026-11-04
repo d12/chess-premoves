@@ -71,7 +71,6 @@ scripts/download-pieces.mjs
 puzzle-finder/            ppz: see §6 and puzzle-finder/README.md
 puzzle-building-guide.md  the owner's step-by-step guide for generating and adding puzzles
 design.md                 original product brief
-public/engine/            LEFTOVER Stockfish files (~40 MB), unused; see §9
 review_queue.jsonl        stray ppz review queue committed at the repo root; see §9
 ```
 
@@ -124,7 +123,7 @@ The opponent receives the full plan. `chooseReply` searches Black's replies agai
 
 The node limit is 100k. If that is exceeded, it falls back to a first-refutation search, and then to `ruleOfThumbReply` (make the next premove illegal if possible, else capture, else any legal move). Typical replies take well under 1 ms. The refuter mirrors chess.js draw rules, so the browser and the engine agree on outcomes.
 
-There is **no Stockfish in the game**. It was removed because it plays good chess, not anti-plan chess.
+There is **no Stockfish in the game**. It was removed because it plays good chess, not anti-plan chess, and its leftover files (`public/engine/`, ~40 MB, GPL) were deleted in Nov 2026.
 
 ### 4.4 The WASM build (important)
 
@@ -349,7 +348,6 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 9. Loose ends and ideas
 
-- **`public/engine/`** holds about 40 MB of unused Stockfish files (GPL-licensed) that Vite copies into every deploy. Deleting the folder would shrink the site to about 300 KB. This was offered to the owner but not yet done.
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
 - Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
@@ -357,5 +355,5 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
-- No service worker, so the installed app still needs a connection (the whole game is ~350 KB plus the unused `public/engine/`).
+- No service worker, so the installed app still needs a connection (the whole deploy is about 0.5 MB).
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).
