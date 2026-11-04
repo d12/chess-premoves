@@ -306,7 +306,14 @@ function defaultContext() {
   return AudioContextClass ? new AudioContextClass({ latencyHint: "interactive" }) : null;
 }
 
-export function createSoundPlayer({ storage = globalThis.localStorage, createContext = defaultContext, onPlay } = {}) {
+/**
+ * `onPlay(name, details)` is called for every requested sound (also while muted).
+ * `keepAwake()` returning true stops a mute from suspending the shared AudioContext, which
+ * the background music (music.js) also plays through.
+ */
+export function createSoundPlayer({
+  storage = globalThis.localStorage, createContext = defaultContext, onPlay, keepAwake = () => false,
+} = {}) {
   let muted = false;
   try {
     muted = storage?.getItem(STORAGE_KEY) === "off";
@@ -315,6 +322,7 @@ export function createSoundPlayer({ storage = globalThis.localStorage, createCon
   }
   let context = null;
   let output = null;
+  let musicInput = null;
   let failed = false;
 
   function ensureContext() {
@@ -330,10 +338,26 @@ export function createSoundPlayer({ storage = globalThis.localStorage, createCon
       failed = true;
       return null;
     }
+    // effects and music share one soft-clipper, so the two together can't clip either
+    const limiter = createLimiter(context);
+    limiter.connect(context.destination);
     output = context.createGain();
     output.gain.value = OUTPUT_GAIN;
-    output.connect(createLimiter(context)).connect(context.destination);
+    output.connect(limiter);
+    musicInput = context.createGain();
+    musicInput.connect(limiter);
     return context;
+  }
+
+  /** The shared AudioContext and the input the music plays into, or null without Web Audio. */
+  function audio() {
+    if (!ensureContext()) {
+      return null;
+    }
+    if (context.state === "suspended") {
+      context.resume?.().catch?.(() => {});
+    }
+    return { context, musicInput };
   }
 
   /** Play a sound now, or `when` seconds from now. Returns whether it was scheduled. */
@@ -366,7 +390,7 @@ export function createSoundPlayer({ storage = globalThis.localStorage, createCon
     } catch {
       // not remembered, but still applies to this session
     }
-    if (muted && context?.state === "running") {
+    if (muted && context?.state === "running" && !keepAwake()) {
       context.suspend?.().catch?.(() => {});
     } else if (!muted && context?.state === "suspended") {
       context.resume?.().catch?.(() => {});
@@ -377,6 +401,7 @@ export function createSoundPlayer({ storage = globalThis.localStorage, createCon
   return Object.freeze({
     play,
     isMuted: () => muted,
+    audio,
     setMuted,
     toggleMuted: () => setMuted(!muted),
   });

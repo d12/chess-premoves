@@ -1288,7 +1288,8 @@
 
 /* ---------- Sound toggle and the development sound board ---------- */
 
-.sound-toggle {
+/* the music and sound-effect buttons in the top bar */
+.icon-toggle {
   width: 34px;
   height: 34px;
   display: inline-grid;
@@ -1302,16 +1303,16 @@
   transition: background 130ms ease, color 130ms ease;
 }
 
-.sound-toggle:hover {
+.icon-toggle:hover {
   background: #fff;
 }
 
-.sound-toggle svg {
+.icon-toggle svg {
   width: 19px;
   height: 19px;
 }
 
-.sound-toggle.is-muted {
+.icon-toggle.is-muted {
   color: #8b9386;
 }
 
@@ -1371,6 +1372,25 @@
   }
 
   .topbar-status {
-    gap: 6px;
+    gap: 5px;
   }
+
+  .icon-toggle {
+    width: 32px;
+    height: 32px;
+  }
+
+  .star-counter {
+    padding: 5px 8px;
+  }
+}
+
+.sound-board-grid + .sound-board-grid {
+  margin-top: 8px;
+}
+
+.sound-board-grid .is-current {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-pale);
 }
