@@ -356,7 +356,7 @@ const MAP_LAYOUTS = {
 const SOUND_GROUPS = [
   ["Planning", ["premove", "undo", "illegal", "submit"]],
   ["Playback", ["move", "capture", "check", "castle", "promote", "mate"]],
-  ["Results", ["win", "perfect", "poppers", "defeat", "draw"]],
+  ["Results", ["win", "perfect", "poppers", "defeat"]],
   ["Menus and maps", ["click", "open", "back", "lock", "pop", "trail", "hop", "flag", "stamp", "unlock-world"]],
 ];
 
@@ -645,8 +645,7 @@ function renderOutcome() {
     `;
   }
 
-  const victory = outcome === "victory";
-  const draw = outcome === "draw";
+  const victory = outcome === "victory"; // otherwise a defeat: only checkmate solves a level
   const { perfect, minimumMoves, movesUsed } = state.snapshot;
   if (victory && perfect) {
     return `
@@ -663,13 +662,13 @@ function renderOutcome() {
     </div>
   `;
   }
-  const title = victory ? "Checkmate!" : draw ? "Draw" : "Not this time";
+  const title = victory ? "Checkmate!" : "Not this time";
   const perfectHint = victory && minimumMoves
     ? `<p class="perfect-hint">You used ${plural(movesUsed, "premove")}; it can be done in ${minimumMoves}. Retry for a perfect <span aria-hidden="true">★</span></p>`
     : "";
   return `
-    <div class="outcome-card ${victory ? "is-victory" : draw ? "is-draw" : "is-defeat"} ${victory && state.revealOutcome ? "is-revealing" : ""}" role="status">
-      <p class="eyebrow">${victory ? "Beautifully seen" : draw ? "The position is level" : "Keep training"}</p>
+    <div class="outcome-card ${victory ? "is-victory" : "is-defeat"} ${victory && state.revealOutcome ? "is-revealing" : ""}" role="status">
+      <p class="eyebrow">${victory ? "Beautifully seen" : "Keep training"}</p>
       <h3>${title}</h3>
       <p>${escapeHTML(message)}</p>
       ${perfectHint}
@@ -758,7 +757,7 @@ function renderPuzzle() {
           <div class="panel-top">
             <div>
               <p class="eyebrow">${planning ? "Plan your line" : snapshot.phase === "playing" ? "Executing" : "Result"}</p>
-              <h2>${planning ? "Your premoves" : snapshot.phase === "playing" ? "Watch it unfold" : "Puzzle complete"}</h2>
+              <h2>${planning ? "Your premoves" : snapshot.phase === "playing" ? "Watch it unfold" : snapshot.outcome === "victory" ? "Solved" : "Not solved"}</h2>
             </div>
             <span class="move-count">${moveCount} ${moveCount === 1 ? "move" : "moves"}</span>
           </div>
@@ -903,8 +902,8 @@ function render() {
   }
   if (state.revealOutcome && state.screen === "puzzle") {
     const { outcome, perfect } = state.snapshot;
-    if (outcome === "defeat" || outcome === "draw") {
-      sounds.play(outcome); // wins already got their fanfare as mate landed
+    if (outcome === "defeat") {
+      sounds.play("defeat"); // wins already got their fanfare as mate landed
     }
     // A perfect solve gets a second, golden volley when its result card appears.
     if (outcome === "victory" && perfect && !prefersReducedMotion()) {
