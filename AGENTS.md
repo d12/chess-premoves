@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the touch-drag PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, and 67 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the offline-service-worker PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, and 74 passing tests.
 
 ---
 
@@ -65,6 +65,8 @@ src/
   assets/pieces/*.png     Neo piece images (fall back to Unicode glyphs if missing)
 test/                     node:test suites (see §7)
 scripts/wasm-stamp.mjs    write/check the WASM source fingerprint
+scripts/service-worker.mjs  builds dist/sw.js (precache list + version) and the Vite plugin that runs it
+src/service-worker.js     the offline worker's source (not bundled; see §5.1)
 scripts/download-pieces.mjs
 .githooks/pre-commit      rebuild WASM if its C++ changed; check puzzles if puzzles.json is staged
 .github/workflows/deploy-pages.yml   test + build on PRs; test + build + deploy on push to main
@@ -256,6 +258,14 @@ The owner's brief: it should feel and flow like an app, not a website, on every 
 `.github/workflows/deploy-pages.yml` runs on every push to `main`: `npm ci`, `npm test`, `npm run build`, then publishes `dist/` to GitHub Pages. PRs run the same build without deploying. The Pages source is set to GitHub Actions. Nothing else is needed: merging to `main` ships. Watch the run with
 `gh api "repos/d12/chess-premoves/actions/runs?branch=main&per_page=3"`.
 
+### 5.1 Offline (service worker)
+
+- After every production build, the Vite plugin in `vite.config.js` (`scripts/service-worker.mjs`) writes **`dist/sw.js`**: `src/service-worker.js` with `VERSION` (a hash of every built file's path and contents) and `PRECACHE` (every file in `dist/`, plus `./`) prepended. Dependency-free; no Workbox.
+- `main.js` registers `./sw.js` on `load`, **production only** (`import.meta.env.PROD`); the dev server has no worker.
+- The worker precaches the whole game on install (~0.5 MB, fetched with `cache: "reload"` so the browser's HTTP cache, max-age 600 on Pages, can't hand it the previous deploy), then serves everything **cache-first**; every navigation in scope gets the cached `index.html`. Non-GET and cross-origin requests are left alone; anything not precached goes to the network.
+- **Updates:** any change to the build changes `VERSION`, so the browser installs the new worker in the background on the next visit; it calls `skipWaiting` + `clients.claim`, deletes older `premove-*` caches, and **the launch after that runs the new version**. That's safe because the page loads all its assets at start-up (piece images are inlined in the JS bundle), so an open page never needs a file from the cache being replaced. If the game ever lazy-loads assets, revisit this (keep the old cache until no client uses it).
+- Progress lives in localStorage, so it works offline too.
+
 ---
 
 ## 6. The puzzle finder (`puzzle-finder/`, CLI `./ppz`)
@@ -294,7 +304,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 67 tests in 10 files, about 25 s.
+- `npm test`: 74 tests in 11 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
@@ -305,6 +315,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
+  - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)
 - **`main.js` has no unit tests.** That is how a `ReferenceError` that froze every win reached production (PR #9). After any UI change, **drive the real page in a headless browser.** What has worked:
   - Start `npx vite --port <p> --strictPort` in the background, then use Puppeteer or Playwright with Chromium.
   - Open worlds with `.world-card[data-stage-id="1"]` and levels with `.level-node[data-level-id="1-1"]` (or `.continue-button`).
@@ -324,6 +335,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
 - Headless-browser caveats:
   - The browser's native HTML5 drag image can't be observed. Dispatch `DragEvent`s with a `DataTransfer` to test the mouse drag logic, and ask the owner to try a real drag.
+  - **Offline:** on the production build, wait for `navigator.serviceWorker.controller`, then `context.setOffline(true)`, reload and play a level. For updates, edit a file in the served `dist/`, rerun `writeServiceWorker(dir)` from `scripts/service-worker.mjs`, reload, and poll `caches.keys()` from Node until only the new `premove-<version>` remains (~3 s), then reload once more. Don't return a Promise from `page.waitForFunction`: Playwright treats it as truthy at once.
   - **Touch drags can be tested for real**: open a CDP session (`context.newCDPSession(page)`) on a context with `hasTouch: true` and send `Input.dispatchTouchEvent` (`touchStart`, a few `touchMove`s, `touchEnd` with empty `touchPoints`). Chrome turns these into `pointerType: "touch"` pointer events, so the whole drag path runs.
   - Confetti timing runs slower when frames are throttled.
   - **Don't run `pkill -f <pattern>`** in the same shell command line that contains the pattern: it kills its own shell (exit code 144) and skips everything after it. This once left work stranded in a `git stash`.
@@ -355,5 +367,5 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
-- No service worker, so the installed app still needs a connection (the whole deploy is about 0.5 MB).
+- Offline updates are silent: a new deploy shows up on the launch after next. A small "New version ready · Restart" toast (listen for `controllerchange`) would make updates visible.
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).

@@ -1719,4 +1719,14 @@ for (const type of ["pointerdown", "keydown"]) {
 // No music in a background tab; it picks up from the top when the tab is back.
 document.addEventListener("visibilitychange", () => music.setHidden(document.hidden));
 
+// Offline support: the production build ships a service worker that precaches the game
+// (see src/service-worker.js). Not in development, where Vite serves files live.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Offline support is unavailable:", error);
+    });
+  });
+}
+
 void initializeApp();
