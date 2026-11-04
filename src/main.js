@@ -912,6 +912,13 @@ function render() {
   if (!state.transitioning) {
     playMapEffects();
   }
+  if (touchDrag.dragging) {
+    // re-rendered mid-drag: keep the lifted piece's square marked
+    app.querySelector(`[data-square="${touchDrag.from}"]`)?.classList.add("is-drag-source");
+    const over = touchDrag.over;
+    touchDrag.over = null;
+    markDragOver(over);
+  }
   music.update(musicTarget());
   syncHistory();
 }
@@ -1406,7 +1413,7 @@ app.addEventListener("click", (event) => {
   }
 
   const squareElement = event.target.closest("[data-square]");
-  if (squareElement) {
+  if (squareElement && performance.now() > touchDrag.suppressClickUntil) {
     selectSquare(squareElement.dataset.square);
   }
 });
@@ -1414,6 +1421,10 @@ app.addEventListener("click", (event) => {
 app.addEventListener("dragstart", (event) => {
   const squareElement = event.target.closest("[data-square]");
   if (!squareElement || state.snapshot?.phase !== "planning") {
+    return;
+  }
+  if (touchDrag.pointerId !== null || touchDrag.lastPointerType !== "mouse") {
+    event.preventDefault(); // a finger or pen: the pointer drag below handles it
     return;
   }
   const square = squareElement.dataset.square;
@@ -1466,6 +1477,150 @@ app.addEventListener("drop", (event) => {
     render();
   } else if (from) {
     attemptMove(from, to);
+  }
+});
+
+// ---- Dragging pieces by touch (and pen) ----
+// HTML5 drag and drop (above) only works with a mouse, so fingers and pens get their own
+// drag built on pointer events, like chess.com's mobile board: touch a piece and slide it,
+// it lifts (a little larger, so it shows past your finger), the square under your finger is
+// outlined, and letting go queues the move. A touch that doesn't move is still a tap and
+// goes through tap-to-move. Nothing re-renders mid-drag: the selection and its legal
+// targets are painted onto the existing squares, and the drop goes through attemptMove.
+const DRAG_START_DISTANCE = 6; // px of travel before a touch counts as a drag, not a tap
+const touchDrag = {
+  pointerId: null, // the finger/pen holding a piece (pressed on one of yours)
+  lastPointerType: "mouse",
+  from: null,
+  startX: 0,
+  startY: 0,
+  dragging: false, // past the threshold: the piece is lifted
+  ghost: null, // the floating piece, a child of <body> so renders can't touch it
+  over: null, // the square under the finger
+  suppressClickUntil: 0,
+};
+
+function paintSelection(square) {
+  const targets = new Set(state.session.legalMovesFrom(square).map((move) => move.to));
+  for (const element of app.querySelectorAll(".board [data-square]")) {
+    const name = element.dataset.square;
+    element.classList.toggle("is-selected", name === square);
+    element.classList.toggle("is-legal-target", targets.has(name));
+  }
+}
+
+function markDragOver(square) {
+  if (touchDrag.over === square) {
+    return;
+  }
+  app.querySelector(".square.is-drag-over")?.classList.remove("is-drag-over");
+  touchDrag.over = square;
+  if (square) {
+    app.querySelector(`[data-square="${square}"]`)?.classList.add("is-drag-over");
+  }
+}
+
+function moveGhost(clientX, clientY) {
+  const ghost = touchDrag.ghost;
+  if (ghost) {
+    ghost.style.transform = `translate3d(${clientX - ghost.offsetWidth / 2}px, ${clientY - ghost.offsetHeight / 2}px, 0)`;
+  }
+}
+
+function liftPiece(clientX, clientY) {
+  const squareElement = app.querySelector(`[data-square="${touchDrag.from}"]`);
+  const pieceElement = squareElement?.querySelector(".piece");
+  if (!pieceElement) {
+    return false;
+  }
+  touchDrag.dragging = true;
+  state.selectedSquare = touchDrag.from;
+  state.interactionError = "";
+  app.querySelector(".inline-error")?.remove();
+  paintSelection(touchDrag.from);
+  const size = squareElement.getBoundingClientRect().width;
+  const ghost = document.createElement("div");
+  ghost.className = `drag-ghost ${touchDrag.lastPointerType === "touch" ? "is-touch" : ""}`;
+  ghost.style.width = `${size}px`;
+  ghost.style.height = `${size}px`;
+  ghost.append(pieceElement.cloneNode(true));
+  document.body.append(ghost);
+  touchDrag.ghost = ghost;
+  squareElement.classList.add("is-drag-source");
+  moveGhost(clientX, clientY);
+  markDragOver(squareAtPoint(clientX, clientY));
+  return true;
+}
+
+function endTouchDrag() {
+  touchDrag.ghost?.remove();
+  touchDrag.ghost = null;
+  markDragOver(null);
+  app.querySelectorAll(".is-drag-source").forEach((element) => element.classList.remove("is-drag-source"));
+  touchDrag.pointerId = null;
+  touchDrag.from = null;
+  touchDrag.dragging = false;
+}
+
+app.addEventListener("pointerdown", (event) => {
+  touchDrag.lastPointerType = event.pointerType;
+  if (event.pointerType === "mouse" || touchDrag.pointerId !== null || !event.isPrimary) {
+    return;
+  }
+  const squareElement = event.target.closest(".board [data-square]");
+  if (!squareElement || state.screen !== "puzzle" || state.snapshot?.phase !== "planning" || state.promotionRequest) {
+    return;
+  }
+  const square = squareElement.dataset.square;
+  if (parsePlacement(state.snapshot.fen).get(square)?.color !== state.snapshot.playerColor) {
+    return; // not your piece: an ordinary tap (e.g. a destination for tap-to-move)
+  }
+  touchDrag.pointerId = event.pointerId;
+  touchDrag.from = square;
+  touchDrag.startX = event.clientX;
+  touchDrag.startY = event.clientY;
+});
+
+window.addEventListener("pointermove", (event) => {
+  if (event.pointerId !== touchDrag.pointerId) {
+    return;
+  }
+  if (!touchDrag.dragging) {
+    const travel = Math.hypot(event.clientX - touchDrag.startX, event.clientY - touchDrag.startY);
+    if (travel < DRAG_START_DISTANCE || !liftPiece(event.clientX, event.clientY)) {
+      return;
+    }
+  }
+  moveGhost(event.clientX, event.clientY);
+  markDragOver(squareAtPoint(event.clientX, event.clientY));
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (event.pointerId !== touchDrag.pointerId) {
+    return;
+  }
+  const { from, dragging } = touchDrag;
+  const to = dragging ? squareAtPoint(event.clientX, event.clientY) : null;
+  endTouchDrag();
+  if (!dragging) {
+    return; // a tap: the click that follows does tap-to-move
+  }
+  touchDrag.suppressClickUntil = performance.now() + 400;
+  if (to && to !== from && state.snapshot?.phase === "planning" && !state.promotionRequest) {
+    attemptMove(from, to);
+  } else {
+    // dropped back on its square or off the board: the piece goes home, still selected
+    render();
+  }
+});
+
+window.addEventListener("pointercancel", (event) => {
+  if (event.pointerId === touchDrag.pointerId) {
+    const dragging = touchDrag.dragging;
+    endTouchDrag();
+    if (dragging) {
+      render();
+    }
   }
 });
 

@@ -525,6 +525,38 @@ p {
   cursor: grabbing;
 }
 
+/* your pieces while planning: a finger on one drags it (see the touch drag in main.js) */
+.square[draggable="true"] {
+  touch-action: none;
+}
+
+/* the square under a dragging finger */
+.square.is-drag-over {
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.9), inset 0 0 0 100px rgba(255, 255, 255, 0.16);
+}
+
+/* the piece being dragged by touch or pen: follows the pointer, above everything */
+.drag-ghost {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  container-type: inline-size;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.drag-ghost .piece {
+  font-size: 88cqw;
+  filter: drop-shadow(0 5px 6px rgba(20, 28, 18, 0.35));
+}
+
+/* under a finger: a size up and lifted a little, so both the piece and the outlined
+   square it would land on show past the fingertip */
+.drag-ghost.is-touch .piece {
+  transform: translateY(-40%) scale(1.45);
+}
+
 .light-square {
   background: #eeeed2;
 }
