@@ -788,9 +788,6 @@ p {
   color: #a13a34;
 }
 
-.outcome-card.is-draw h3 {
-  color: #626640;
-}
 
 .outcome-card.is-error {
   border-color: #e8c9c5;

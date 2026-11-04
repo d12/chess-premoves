@@ -21,6 +21,22 @@ function matchingLegalMove(chess, move) {
   ));
 }
 
+// Only checkmate solves a level, so a drawn position is a failure. Name the reason so the
+// player can see why the line didn't work, without calling the result a "draw".
+function drawnReason(chess) {
+  if (chess.isStalemate()) {
+    const side = chess.turn() === "w" ? "White" : "Black";
+    return `Stalemate: ${side} has no legal move but isn't in check. Only checkmate solves the level.`;
+  }
+  if (chess.isInsufficientMaterial()) {
+    return "Not enough pieces are left on the board to give checkmate.";
+  }
+  if (chess.isThreefoldRepetition()) {
+    return "The same position came up three times, so the game was drawn before checkmate.";
+  }
+  return "Fifty moves passed without a capture or pawn move, so the game was drawn before checkmate.";
+}
+
 function pause(durationMs) {
   return durationMs > 0
     ? new Promise((resolve) => setTimeout(resolve, durationMs))
@@ -178,39 +194,8 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       await pause(delayMs);
     };
 
-    const finish = async (result, reason) => {
-      phase = "complete";
-      outcome = result;
-      message = reason;
-      await onUpdate(snapshot());
-      return snapshot();
-    };
-
-    for (let index = 0; index < premoves.length; index += 1) {
-      const premove = premoves[index];
-      const legalMove = matchingLegalMove(actual, premove);
-      if (!legalMove) {
-        return finish("defeat", "An opponent move made your next premove illegal.");
-      }
-
-      const playerMove = actual.move({
-        from: legalMove.from,
-        to: legalMove.to,
-        ...(legalMove.promotion ? { promotion: legalMove.promotion } : {}),
-      });
-      await publishMove(playerMove);
-
-      if (actual.isCheckmate()) {
-        perfect = minimumMoves !== null && premoves.length <= minimumMoves;
-        return finish("victory", "Checkmate! You saw the whole combination.");
-      }
-      if (actual.isDraw()) {
-        return finish("draw", "The position is drawn.");
-      }
-      if (index === premoves.length - 1) {
-        return finish("defeat", "Your premoves ended before checkmate.");
-      }
-
+    // Ask the opponent for its reply, check it, play it and publish it.
+    const playOpponentMove = async () => {
       let uci;
       try {
         uci = await engine.bestMove(actual.fen(), { timeoutMs: 500 });
@@ -238,18 +223,64 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
         throw new Error(message);
       }
 
-      const appliedEngineMove = actual.move({
+      await publishMove(actual.move({
         from,
         to,
         ...(promotion ? { promotion } : {}),
-      });
-      await publishMove(appliedEngineMove);
+      }));
+    };
 
+    const finish = async (result, reason) => {
+      phase = "complete";
+      outcome = result;
+      message = reason;
+      await onUpdate(snapshot());
+      return snapshot();
+    };
+
+    for (let index = 0; index < premoves.length; index += 1) {
+      const premove = premoves[index];
+      const legalMove = matchingLegalMove(actual, premove);
+      if (!legalMove) {
+        return finish("defeat", "An opponent move made your next premove illegal.");
+      }
+
+      const playerMove = actual.move({
+        from: legalMove.from,
+        to: legalMove.to,
+        ...(legalMove.promotion ? { promotion: legalMove.promotion } : {}),
+      });
+      await publishMove(playerMove);
+
+      if (actual.isCheckmate()) {
+        perfect = minimumMoves !== null && premoves.length <= minimumMoves;
+        return finish("victory", "Checkmate! You saw the whole combination.");
+      }
+      if (actual.isDraw()) {
+        return finish("defeat", drawnReason(actual));
+      }
+      if (index === premoves.length - 1) {
+        if (actual.inCheck()) {
+          // The last premove gave check but not mate: show the escape before the verdict,
+          // so it's clear the king had a way out.
+          await playOpponentMove();
+          if (actual.isCheckmate()) {
+            return finish("defeat", "The opponent escaped your check and checkmated you.");
+          }
+          if (actual.isDraw()) {
+            return finish("defeat", drawnReason(actual));
+          }
+          return finish("defeat", "Your last premove gave check, but not checkmate: the king had a way out.");
+        }
+        return finish("defeat", "Your premoves ended before checkmate.");
+      }
+
+      await playOpponentMove();
       if (actual.isCheckmate()) {
         return finish("defeat", "The opponent checkmated you before your line was complete.");
       }
       if (actual.isDraw()) {
-        return finish("draw", "The position is drawn.");
+        return finish("defeat", drawnReason(actual));
       }
     }
 

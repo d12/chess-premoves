@@ -193,3 +193,17 @@ test("agrees with an independent chess.js reference on generated puzzles and pla
   assert.equal(played, checked);
   assert.ok(refuted > checked / 5 && refuted < checked, `unbalanced sample: ${refuted}/${checked} refuted`);
 });
+
+test("the real opponent plays its escape when the plan ends on a check that isn't mate", { skip }, async () => {
+  const { createPremoveOpponent, loadPremoveEngine } = await import("../src/engine/premoveOpponent.js");
+  const engine = await loadPremoveEngine();
+  const fen = "8/1k6/8/8/8/8/2KQ4/4R3 w - - 0 1"; // level 1
+  const game = createPremoveGame({ id: "1", fen, number_of_moves: 3 });
+  game.queueMove({ from: "e1", to: "b1" }); // Rb1+, but the king has a6, a7, a8 and c6…
+  const opponent = createPremoveOpponent({ engine, puzzleFen: fen, premoves: game.snapshot().premoves });
+  const result = await game.play(opponent, { delayMs: 0 });
+  assert.equal(result.outcome, "defeat");
+  assert.equal(result.lastMove.color, "b", "the escape was played");
+  assert.equal(new Chess(result.fen).inCheck(), false);
+  assert.match(result.message, /gave check, but not checkmate/);
+});
