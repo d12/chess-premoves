@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the app-like-responsive-ux PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, and 67 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the touch-drag PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, and 67 passing tests.
 
 ---
 
@@ -187,7 +187,8 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 - **Win → map animations.** `recordWin()` notes what a win opened in `state.fresh` (`unlockedLevel`/`hopFrom`, `clearedStage`, `unlockedStage`). The next render of the relevant map consumes it and marks elements with `data-fresh`; `playMapEffects()` runs after the transition finishes: the new level's lock shakes off and it pops, its trail segment draws on (dash length measured in screen pixels, because the trail uses `vector-effect: non-scaling-stroke`), the piece hops to it; on a world clear the flag rises, the stamp lands and themed confetti fires; on the world map the new world's lock bursts and its colours flood back. Playing the unlocked level straight away (Next level) drops its pending animation.
 - **Board DOM.** `.board` is a CSS grid of 64 `<button class="square" data-square="e4">` elements, white at the bottom. It also holds two SVG overlays with `viewBox="0 0 8 8"`: `.board-highlights` (z 1, under the pieces) and `.board-arrows` (z 4, above everything). `.piece` has z-index 2 and coordinates have 3. **Only real squares may carry `data-square`**, because code uses `querySelector('[data-square=…]')` and `closest('[data-square]')`. Overlays use `data-highlight` and `data-from`/`data-to`.
 - **Input.**
-  - Click-to-move, plus HTML5 drag and drop. On drag start, the source square gets `is-drag-source` **via `setTimeout(0)`**, so the browser's drag image is captured before the piece is hidden. `dragend` clears it.
+  - Click-to-move, plus HTML5 drag and drop **for the mouse**. On drag start, the source square gets `is-drag-source` **via `setTimeout(0)`**, so the browser's drag image is captured before the piece is hidden. `dragend` clears it.
+  - **Touch and pen drag** (pointer events; the `touchDrag` object in `main.js`), because HTML5 drag and drop doesn't work with fingers. A finger on one of your pieces that travels ≥ 6 px (`DRAG_START_DISTANCE`) lifts it: a `.drag-ghost` (a child of `<body>`, outside the re-rendered `#app`) follows the finger, 1.45× larger and raised 40 % of a square so it shows past the fingertip; the source square gets `is-drag-source` and the square under the finger `is-drag-over`. Selection and legal targets are painted onto the existing squares (`paintSelection`); **nothing re-renders until the drop**, which goes through `attemptMove` (so promotion, illegal-move errors and sounds behave as for clicks). A touch that doesn't move is a tap and falls through to click-to-move; the click after a drag is ignored for 400 ms (`suppressClickUntil`). Dropping back on its own square or off the board puts the piece back, still selected; `pointercancel` does the same. Your pieces' squares have `touch-action: none` while planning so the browser doesn't turn the drag into a pan. `dragstart` is cancelled when the last pointer wasn't a mouse, so a long-press can't start a native drag on top.
   - Dropping a piece back on its own square just keeps it selected.
 - **Right-click annotations** (chess.com parity):
   - Right-drag draws an arrow, **committed and drawn only on button release**. Knight jumps draw as an L, long leg first.
@@ -323,7 +324,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
 - Headless-browser caveats:
-  - The browser's native HTML5 drag image can't be observed. Dispatch `DragEvent`s with a `DataTransfer` to test the drag logic, and ask the owner to try a real drag.
+  - The browser's native HTML5 drag image can't be observed. Dispatch `DragEvent`s with a `DataTransfer` to test the mouse drag logic, and ask the owner to try a real drag.
+  - **Touch drags can be tested for real**: open a CDP session (`context.newCDPSession(page)`) on a context with `hasTouch: true` and send `Input.dispatchTouchEvent` (`touchStart`, a few `touchMove`s, `touchEnd` with empty `touchPoints`). Chrome turns these into `pointerType: "touch"` pointer events, so the whole drag path runs.
   - Confetti timing runs slower when frames are throttled.
   - **Don't run `pkill -f <pattern>`** in the same shell command line that contains the pattern: it kills its own shell (exit code 144) and skips everything after it. This once left work stranded in a `git stash`.
 
@@ -350,7 +352,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **`public/engine/`** holds about 40 MB of unused Stockfish files (GPL-licensed) that Vite copies into every deploy. Deleting the folder would shrink the site to about 300 KB. This was offered to the owner but not yet done.
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
-- Touch devices can't drag (HTML5 drag and drop) or draw arrows (no right click). Tap-to-move works. A pointer-events drag implementation would fix both; it's the biggest remaining mobile gap.
+- Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
 - Possible next features: showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
