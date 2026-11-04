@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ARRANGEMENTS, barAt, createMusicPlayer, degreeToMidi, DUCKS, FORM, MUSIC_GAIN, passBars, passSeconds, REST_BARS, SCENES, scheduleRange,
+  barAt, barSeconds, createMusicPlayer, degreeToMidi, DUCKS, MUSIC_GAIN, parseToken, passBars, passSeconds, REST_BARS, sceneGains, SCENES, scheduleRange, SONGS,
 } from "../src/effects/music.js";
 import { SOUND_NAMES } from "../src/effects/sound.js";
 
@@ -55,87 +55,126 @@ function layerOf(start, layers) {
   return walk(start.node);
 }
 
-test("the song is long enough not to feel loopy, and every bar is well formed", () => {
-  const bars = passBars(0);
-  assert.equal(FORM[0], "intro");
-  assert.ok(bars.length >= 56, `${bars.length} bars`);
-  for (const world of Object.keys(ARRANGEMENTS)) {
+const WORLDS = Object.keys(SONGS);
+
+test("each world's piece is long enough not to feel loopy, and every bar is well formed", () => {
+  assert.deepEqual(WORLDS, ["meadow", "forest", "desert", "frost", "volcano"]);
+  for (const world of WORLDS) {
+    const song = SONGS[world];
+    const bars = passBars(world, 0);
+    assert.equal(song.form[0], "intro", world);
     const seconds = passSeconds(world);
-    assert.ok(seconds >= 120 && seconds <= 170, `${world}: one pass lasts ${seconds.toFixed(0)} s`);
-  }
-  for (const bar of bars) {
-    assert.ok(bar.chords.length === 1 || bar.chords.length === 2);
-    for (const line of [bar.lead, bar.counter]) {
-      if (!line) continue;
-      assert.equal(line.length, 8, `${bar.section}[${bar.index}] has 8 eighths`);
-      for (const token of line) {
-        assert.ok(token === "." || token === "-" || (Number.isInteger(Number(token)) && Number(token) >= -3 && Number(token) <= 12), `token ${token}`);
+    assert.ok(seconds >= 100 && seconds <= 170, `${world}: one pass lasts ${seconds.toFixed(0)} s`);
+    for (const bar of bars) {
+      assert.ok(bar.chords.length === 1 || bar.chords.length === 2, `${world} ${bar.section}`);
+      for (const line of [bar.lead, bar.counter, bar.bassLine]) {
+        if (!line) continue;
+        assert.equal(line.length, song.slots, `${world} ${bar.section}[${bar.index}] has ${song.slots} slots`);
+        for (const token of line) {
+          assert.ok(token === "." || token === "-" || parseToken(token), `${world}: token ${token}`);
+        }
       }
     }
+    assert.ok(bars.some((bar) => bar.lead === null), `${world}: a breakdown without the melody`);
   }
-  assert.ok(bars.some((bar) => bar.breakdown && bar.lead === null), "a breakdown without the melody");
+});
+
+test("every world is its own piece: tune, metre, scale and tempo", () => {
+  const firstPhrase = (world) => SONGS[world].sections.A.lead.flat().join(" ");
+  assert.equal(new Set(WORLDS.map(firstPhrase)).size, WORLDS.length, "five different melodies");
+  assert.equal(new Set(WORLDS.map((world) => SONGS[world].title)).size, WORLDS.length);
+  assert.equal(new Set(WORLDS.map((world) => SONGS[world].tempo)).size, WORLDS.length, "five tempos");
+  assert.ok(new Set(WORLDS.map((world) => `${SONGS[world].beats}/${SONGS[world].slots}`)).size >= 3, "at least three metres");
+  assert.ok(new Set(WORLDS.map((world) => SONGS[world].scale)).size >= 4, "at least four scales");
+
+  // Knight's Wood is night: a minor key, a 6/8 gallop, and sparse like an underground theme
+  const forest = SONGS.forest;
+  assert.equal(forest.scale, "minor");
+  assert.equal(forest.slots, 6);
+  assert.equal(forest.beats, 2);
+  const rests = (world) => {
+    const tokens = SONGS[world].sections.A.lead.flat();
+    return tokens.filter((token) => token === ".").length / tokens.length;
+  };
+  assert.ok(rests("forest") > rests("meadow") + 0.15, `forest A rests ${rests("forest").toFixed(2)} vs meadow ${rests("meadow").toFixed(2)}`);
+  assert.equal(SONGS.frost.beats, 3, "a waltz");
+  assert.equal(SONGS.desert.scale, "phrygianDominant");
 });
 
 test("the second pass varies the first, and the music rests after two passes", () => {
-  const [first, second] = [passBars(0), passBars(1)];
-  assert.equal(first.length, second.length);
-  assert.ok(second.some((bar) => bar.leadUp) && !first.some((bar) => bar.leadUp), "the last A is lifted an octave");
-  assert.ok(second.some((bar) => bar.harmony) && !first.some((bar) => bar.harmony), "a harmony line on the second pass");
-  assert.ok(second.filter((bar) => bar.counter).length > first.filter((bar) => bar.counter).length, "more counter-melody");
-  const passLength = first.length;
-  assert.equal(barAt(0).section, "intro");
-  assert.equal(barAt(passLength).pass, 1);
-  for (let n = 0; n < REST_BARS; n += 1) {
-    assert.equal(barAt(passLength * 2 + n).rest, true);
+  for (const world of WORLDS) {
+    const [first, second] = [passBars(world, 0), passBars(world, 1)];
+    assert.equal(first.length, second.length);
+    assert.ok(second.some((bar) => bar.leadUp) && !first.some((bar) => bar.leadUp), `${world}: the last A is lifted an octave`);
+    const passLength = first.length;
+    assert.equal(barAt(world, 0).section, "intro");
+    assert.equal(barAt(world, passLength).pass, 1);
+    for (let n = 0; n < REST_BARS; n += 1) {
+      assert.equal(barAt(world, passLength * 2 + n).rest, true);
+    }
+    assert.equal(barAt(world, passLength * 2 + REST_BARS).section, "intro", `${world}: then it starts again`);
+    assert.equal(barAt(world, passLength * 2 + REST_BARS).cycle, 1);
   }
-  assert.equal(barAt(passLength * 2 + REST_BARS).section, "intro", "then it starts again");
-  assert.equal(barAt(passLength * 2 + REST_BARS).cycle, 1);
+  assert.ok(passBars("meadow", 1).some((bar) => bar.harmony), "a harmony line on the second pass");
 });
 
-test("each world recolours the same tune with its own key and mode", () => {
-  const keys = new Set(Object.values(ARRANGEMENTS).map((a) => `${a.key}/${a.mode}/${a.lead}`));
-  assert.equal(keys.size, Object.keys(ARRANGEMENTS).length, "every world sounds different");
-  const meadow = ARRANGEMENTS.meadow;
+test("degrees map to notes in each world's key and scale", () => {
+  const meadow = SONGS.meadow;
   assert.equal(degreeToMidi(meadow, 0), 60);
   assert.equal(degreeToMidi(meadow, 7), 72);
-  assert.equal(degreeToMidi(meadow, 6), 71);
-  assert.equal(degreeToMidi(ARRANGEMENTS.desert, 6) - ARRANGEMENTS.desert.key, 10, "mixolydian has a flat seventh");
-  const volcano = ARRANGEMENTS.volcano;
-  assert.equal(degreeToMidi(volcano, 2) - volcano.key, 3, "minor third");
-  assert.equal(degreeToMidi(volcano, 6) - volcano.key, 10, "natural seventh over most chords");
-  assert.equal(degreeToMidi(volcano, 6, { root: 4 }) - volcano.key, 11, "raised leading tone over the dominant");
-  for (const scene of Object.values(SCENES)) {
-    assert.deepEqual(Object.keys(scene).sort(), Object.keys(SCENES.map).sort());
+  assert.equal(degreeToMidi(meadow, "6"), 71);
+  assert.equal(degreeToMidi(meadow, "4b"), 66, "accidentals");
+  assert.equal(degreeToMidi(SONGS.desert, 1) - SONGS.desert.key, 1, "phrygian dominant: a flat second…");
+  assert.equal(degreeToMidi(SONGS.desert, 2) - SONGS.desert.key, 4, "…and a major third");
+  assert.equal(degreeToMidi(SONGS.frost, 3) - SONGS.frost.key, 6, "lydian: a sharp fourth");
+  const forest = SONGS.forest;
+  assert.equal(degreeToMidi(forest, 2) - forest.key, 3, "minor third");
+  assert.equal(degreeToMidi(forest, 6) - forest.key, 10, "natural seventh over most chords");
+  assert.equal(degreeToMidi(forest, 6, { root: 4 }) - forest.key, 11, "raised leading tone over the dominant");
+  for (const world of WORLDS) {
+    for (const scene of ["map", "planning", "playing"]) {
+      assert.deepEqual(Object.keys(sceneGains(world, scene)).sort(), Object.keys(SCENES.map).sort());
+    }
   }
+  assert.ok(sceneGains("forest", "map").perc > 0 && sceneGains("meadow", "map").perc === 0, "signature percussion per world");
   for (const name of Object.keys(DUCKS)) {
     assert.ok(SOUND_NAMES.includes(name), `ducks under a real sound: ${name}`);
   }
 });
 
 test("scheduling fills the window with bars, only into layers that are on", () => {
-  for (const world of Object.keys(ARRANGEMENTS)) {
+  for (const world of WORLDS) {
     const context = fakeContext();
     const layers = Object.fromEntries(Object.keys(SCENES.map).map((name) => [name, context.createGain()]));
-    const barSeconds = 240 / ARRANGEMENTS[world].tempo;
-    const result = scheduleRange({
-      context,
-      destinationFor: (name) => layers[name],
-      world,
-      fromBar: 4, // the first A
-      startTime: 1,
-      untilTime: 1 + barSeconds * 3,
-      layerOn: (name) => SCENES.planning[name] > 0,
-    });
-    assert.equal(result.nextBar, 7);
-    assert.ok(Math.abs(result.nextTime - (1 + barSeconds * 3)) < 1e-9);
-    assert.equal(context.log.bad, 0, `${world}: every time and value is finite`);
-    const used = new Set(context.log.starts.map((start) => layerOf(start, layers)));
-    assert.ok(context.log.starts.length > 30, `${world}: ${context.log.starts.length} notes`);
-    assert.ok(context.log.starts.every((start) => start.t >= 1 && start.t < 1 + barSeconds * 3 + 0.01));
-    for (const name of used) {
-      assert.ok(SCENES.planning[name] > 0, `${world}: no notes for the muted ${name} layer`);
+    const length = barSeconds(world);
+    for (const scene of ["map", "planning"]) {
+      context.log.starts.length = 0;
+      const gains = sceneGains(world, scene);
+      const result = scheduleRange({
+        context,
+        destinationFor: (name) => layers[name],
+        world,
+        fromBar: 4, // the first A
+        startTime: 1,
+        untilTime: 1 + length * 3,
+        layerOn: (name) => gains[name] > 0,
+      });
+      assert.equal(result.nextBar, 7);
+      assert.ok(Math.abs(result.nextTime - (1 + length * 3)) < 1e-9);
+      assert.equal(context.log.bad, 0, `${world}: every time and value is finite`);
+      assert.ok(context.log.starts.length > 20, `${world} ${scene}: ${context.log.starts.length} notes`);
+      assert.ok(context.log.starts.every((start) => start.t >= 1 && start.t < 1 + length * 3 + 0.01));
+      // vibrato LFOs modulate another oscillator's pitch rather than feeding a layer
+      const used = new Set(context.log.starts.map((start) => layerOf(start, layers)).filter(Boolean));
+      for (const name of used) {
+        assert.ok(gains[name] > 0, `${world} ${scene}: no notes for the muted ${name} layer`);
+      }
+      if (scene === "map") {
+        assert.ok(used.has("lead") && used.has("bass"), `${world}: the band plays on the map`);
+      } else {
+        assert.ok(used.has("pad") && !used.has("lead") && !used.has("kick"), `${world}: planning drops the melody and kick`);
+      }
     }
-    assert.ok(used.has("pad") && used.has("bass") && !used.has("lead") && !used.has("kick"));
   }
 });
 

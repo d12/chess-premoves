@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the background-music PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, and 66 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the distinct-world-music PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, and 67 passing tests.
 
 ---
 
@@ -60,7 +60,7 @@ src/
     generated/premove-engine.sources.sha256 fingerprint of the C++ it was built from
   effects/confetti.js     dependency-free canvas confetti: burst(), cannons(), PALETTES
   effects/sound.js        synthesized sound effects (Web Audio, no audio files): createSoundPlayer, synthesize, soundForMove
-  effects/music.js        synthesized background music: the theme, 5 world arrangements, layers per screen, createMusicPlayer
+  effects/music.js        synthesized background music: a piece per world (SONGS), layers per screen, createMusicPlayer
   assets/pieces/*.png     Neo piece images (fall back to Unicode glyphs if missing)
 test/                     node:test suites (see §7)
 scripts/wasm-stamp.mjs    write/check the WASM source fingerprint
@@ -214,14 +214,24 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 
 ### 4.9 Background music (`effects/music.js`)
 
-- **One original theme, five arrangements** (the Super Mario World approach: the same melody everywhere, re-orchestrated per area). The song is written in **scale degrees**, so each world's key and mode recolour the same tune (`ARRANGEMENTS`): meadow C major, steel-drum lead, 112 bpm; forest D major, flute, brushes, 100; desert E♭ mixolydian, banjo-ish pluck, hand claps, 106; frost F major, celesta an octave up, 96; volcano A minor (harmonic-minor V), square lead, 118. Light swing everywhere, an oom-pah bass with walk-ups and an off-beat chop (Kondo's "syncopated melody over a bouncing pulse").
-- **Form** (`FORM`): intro, A, A′, B, A′, C (breakdown: no melody, bell fragments over bongos and a walking bass), B, A′, tag = 62 bars, 2:06–2:35 depending on tempo. The second pass varies (last A′ an octave up, a harmony line a third below, extra bell counter-melody, fills). After two passes it **rests for 8 bars** of silence, then starts again (`barAt(n)`); per-bar variation is seeded, so it's deterministic.
-- **Layers follow the screen** (`SCENES`, vertical layering like Yoshi's bongos; same tempo and key): `map` = full band; `planning` = no melody or kick, softer bass and chop, a pad, the whole band −3 dB (calmer, for thinking); `playing` (a line is being played out) = bongos and kick back in; a won result goes back to `map`, a failed one to `planning`. A layer that turns on comes in at the next bar line. `main.js` picks the target in `musicTarget()` at the end of every `render()`: the world being played; on the world map, the world you're up to.
-- **Changing world** restarts the tune from the top in the new arrangement, like entering a Mario level. Changing scene never restarts.
-- **Mix:** `MUSIC_GAIN` puts the maps at ≈ −32 dB RMS vs ≈ −21 for a piece move (≈10 dB under), planning ≈ −37. The music bus is band-limited (low-pass 4.8 kHz, high-pass 55 Hz) and **ducks** under fanfares (`DUCKS`: win, perfect, poppers, mate, defeat, flag, stamp, unlock-world), via the sound player's `onPlay`.
+- **A different original piece per world** (`SONGS`), like Mario's overworld / underground / snow / desert / castle themes. The owner asked for each world to be "dramatically different", with Knight's Wood in a minor key ("knighttime") with a new vibe like the underground theme:
+
+  | world | piece | key, metre, tempo | sound |
+  |---|---|---|---|
+  | meadow | Overworld | C major, swung 4/4, 112 | steel drum, oom-pah tuba, off-beat chop, bongos in the breakdown |
+  | forest | Moonlit Gallop | D minor (harmonic V), 6/8, 63 (dotted quarter) | sparse dry plucks with silence (underground idea), hoof clip-clops, crickets, ocarina B section, a chase over i–VII–VI–V |
+  | desert | Mirage | E phrygian dominant, 4/4, 96 | drone, darbuka (maqsum), ornamented reed with grace notes, oud answers, finger cymbals, wind |
+  | frost | Snowfall Waltz | F lydian, 3/4, 126 | celesta, music-box arpeggios, sleigh bells, triangle, wind |
+  | volcano | Throne of Fire | A minor, 4/4, 138 | pounding bass ostinato, organ stabs, square lead with tritones, timpani and toms |
+
+- **Notation:** melodies, counter-melodies and explicit bass lines are bars of tokens, one per slot (an eighth note; `slots` per bar is 8, or 6 in 6/8 and 3/4): a scale degree (`"4"`, `"-2"`, `"4b"`/`"4#"` for chromatic notes), `"-"` holds, `"."` rests. `degreeToMidi(song, token, {root})` applies the key and scale (minor keys raise the 7th over V). Each song has `sections` (chords per bar, lead, counter, optional `bass`, `patterns` overrides, flags like `legato`, `featurePerc`), a `form`, default `patterns` (bass steps, comp style, drum and percussion slots, fill) and per-world `scenes` overrides. `scheduleBar` is generic over all of that.
+- **Form:** every piece is intro, A, A′, B, A′, C (a breakdown without melody), B, A′, tag (frost adds a B′ and more A′s, since waltz bars are short): 1:48–2:35 per pass. The second pass varies (the last A′ an octave up, harmony thirds in meadow/frost/volcano, extra counter-melody, fills). After two passes it **rests for 8 bars**, then starts again (`barAt(world, n)`); per-bar variation is seeded, so it's deterministic.
+- **Layers follow the screen** (`sceneGains(world, scene)`, vertical layering like Yoshi's bongos): `map` = full band; `planning` = no melody or kick, softer bass and comp, a pad, −3 dB; `playing` = kick back in plus the world's percussion (`perc`: bongos, hooves, darbuka, triangle, timpani; worlds whose percussion is their signature keep it on the map too); `amb` (crickets, wind, rumble) is always on. A won result goes back to `map`, a failed one to `planning`. A layer that turns on comes in at the next bar line. `main.js` picks the target in `musicTarget()` after every `render()`: the world being played; on the world map, the world you're up to.
+- **Changing world** starts that world's piece from the top, like entering a Mario level. Changing scene never restarts.
+- **Mix:** `MUSIC_GAIN` × each song's `level` puts every world's map music at ≈ −30 to −32 dB RMS (forest's sparse intro a little lower) vs ≈ −21 for a piece move, peaks ≤ −10 dBFS; planning ≈ −35 to −38. Re-measure with offline renders (§7) after changing any voice or pattern. The music bus is band-limited (low-pass 4.8 kHz, high-pass 55 Hz) and **ducks** under fanfares (`DUCKS`: win, perfect, poppers, mate, defeat, flag, stamp, unlock-world), via the sound player's `onPlay`.
 - **Plumbing:** effects and music share one AudioContext and soft-clipper (`sounds.audio()` gives `{ context, musicInput }`; `keepAwake` stops an effects mute from suspending the context while music plays). Music starts on the **first pointerdown/keydown** (browsers forbid audio before a gesture), stops while the tab is hidden, and has its own on/off button (the ♫ next to the speaker), remembered in `chess-premove-music-v1`. There's no keyboard shortcut for it (M stays effects only).
 - **Scheduling:** a 100 ms interval keeps ≥0.6 s scheduled, a whole bar at a time (`scheduleRange`, also used for offline renders). Each run has its own layer gains, so stopping or switching fades out exactly what was scheduled. About 20 audio sources/s.
-- **Development:** the sound board has world and scene buttons to audition every arrangement and layer; `window.__music` (`state()`, `isPlaying()`) is exposed for headless tests. Both are dev-only. `test/sound.test.js` runs every sound against a fake AudioContext (finite times, everything stops within 2.5 s, everything fades out).
+- **Development:** the sound board has world and scene buttons to audition every piece and layer; `window.__music` (`state()`, `isPlaying()`) is exposed for headless tests. Both are dev-only. `test/sound.test.js` runs every sound against a fake AudioContext (finite times, everything stops within 2.5 s, everything fades out).
 
 ---
 
@@ -268,14 +278,14 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 66 tests in 10 files, about 25 s.
+- `npm test`: 67 tests in 10 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
   - `stages`: the 5×5 layout in `stages.json`
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
-  - `music`: form length and shape, second-pass variation and rests, modes, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
+  - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
@@ -314,7 +324,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - No Stockfish in the game. The opponent is the WASM refuter.
 - The site must stay fully static (GitHub Pages). There is no backend.
 - Sound effects are on by default, synthesized (no audio files), mutable from the top bar or with M. Wins never get a sad sound; losses get a gentle two-note cue.
-- Background music is on by default, original (not a Mario melody), synthesized, quieter than the effects, with its own on/off button.
+- Background music is on by default, original (no Mario melodies), synthesized, quieter than the effects, with its own on/off button. Each world has its own piece (owner feedback: "each world dramatically different"; Knight's Wood minor, "like the underground theme").
 
 ---
 

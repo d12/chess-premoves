@@ -1,5 +1,5 @@
 import { burst, cannons, PALETTES } from "./effects/confetti.js";
-import { ARRANGEMENTS, createMusicPlayer, SCENES } from "./effects/music.js";
+import { createMusicPlayer, SCENES, SONGS } from "./effects/music.js";
 import { createSoundPlayer, SOUND_NAMES, soundForMove } from "./effects/sound.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import {
@@ -153,9 +153,9 @@ function toggleMusic() {
   sounds.play("click");
 }
 
-// Which arrangement and layers the music plays: the world being played (on the world map,
-// the world you're up to), full band on maps, a thinking texture while planning, bongos
-// while a line plays out.
+// Which piece and layers the music plays: the world being played (on the world map, the
+// world you're up to), full band on maps, a thinking texture while planning, extra
+// percussion while a line plays out.
 function musicTarget() {
   if (state.screen === "sounds" && state.musicPreview) {
     return state.musicPreview;
@@ -372,9 +372,9 @@ function renderSoundBoard() {
       <p class="sound-board-copy">Every effect, synthesized live by <code>src/effects/sound.js</code>. Board sounds also have an opponent variant.${sounds.isMuted() ? " Sound is muted: press M to hear them." : ""}</p>
       <section>
         <h2>Music</h2>
-        <p class="sound-board-copy">Each world's arrangement of the theme (<code>src/effects/music.js</code>), and the layers each screen uses. Picking a world restarts the tune.${music.isMuted() ? " Music is off: use the note button above." : ""}</p>
+        <p class="sound-board-copy">Each world's own piece (<code>src/effects/music.js</code>), and the layers each screen uses. Picking a world restarts its tune.${music.isMuted() ? " Music is off: use the note button above." : ""}</p>
         <div class="sound-board-grid">
-          ${Object.keys(ARRANGEMENTS).map((world) => `<button class="secondary-button ${state.musicPreview?.world === world ? "is-current" : ""}" type="button" data-action="music-preview" data-world="${world}">${world}</button>`).join("")}
+          ${Object.entries(SONGS).map(([world, song]) => `<button class="secondary-button ${state.musicPreview?.world === world ? "is-current" : ""}" type="button" data-action="music-preview" data-world="${world}">${world} · ${song.title}</button>`).join("")}
         </div>
         <div class="sound-board-grid">
           ${Object.keys(SCENES).map((scene) => `<button class="secondary-button ${state.musicPreview?.scene === scene ? "is-current" : ""}" type="button" data-action="music-preview" data-scene="${scene}">${scene}</button>`).join("")}
