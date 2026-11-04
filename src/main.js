@@ -1,4 +1,5 @@
 import { burst, cannons, PALETTES } from "./effects/confetti.js";
+import { createSoundPlayer, SOUND_NAMES, soundForMove } from "./effects/sound.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import {
   annotationColor, annotationLayers, EMPTY_ANNOTATIONS, hasAnnotations, toggleArrow, toggleHighlight,
@@ -13,6 +14,12 @@ import "./style.css";
 import "./ui/worlds.css";
 
 const app = document.querySelector("#app");
+// In development, every sound is also logged to window.__soundLog for headless tests.
+const sounds = createSoundPlayer(import.meta.env.DEV ? {
+  onPlay(name, details) {
+    (window.__soundLog ??= []).push({ name, at: Math.round(performance.now()), ...details });
+  },
+} : undefined);
 const files = "abcdefgh";
 const pieceSymbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -89,12 +96,36 @@ function renderHeader() {
       </button>
       <span class="topbar-status">
         ${showStars ? `<span class="star-counter ${stars ? "has-stars" : ""}" title="Perfect solves" aria-label="${stars} of ${LEVELS.length} levels perfected"><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small></span>` : ""}
+        ${renderSoundToggle()}
         <span class="engine-pill ${state.engine ? "is-ready" : ""}">
           <span class="status-dot"></span>${engineStatus}
         </span>
       </span>
     </header>
   `;
+}
+
+const SPEAKER = '<path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="currentColor"/>';
+function renderSoundToggle() {
+  const muted = sounds.isMuted();
+  const waves = muted
+    ? '<path d="M15.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    : '<path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+  return `<button class="sound-toggle ${muted ? "is-muted" : ""}" type="button" data-action="toggle-sound" aria-pressed="${!muted}" aria-label="Sound effects" title="${muted ? "Sound off" : "Sound on"} (M)">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${SPEAKER}${waves}</svg>
+  </button>`;
+}
+
+// Toggled without a full re-render, so map animations in progress aren't cut short.
+function toggleSound() {
+  const muted = sounds.toggleMuted();
+  const toggle = app.querySelector(".sound-toggle");
+  if (toggle) {
+    toggle.outerHTML = renderSoundToggle();
+  }
+  if (!muted) {
+    sounds.play("click");
+  }
 }
 
 function renderLoading() {
@@ -247,7 +278,7 @@ function renderWorldMap() {
       </section>
       <ol class="world-row" aria-label="Worlds">${cards}</ol>
       <p class="unlock-note">Solve a level in the fewest possible premoves to perfect it and earn its <span class="perfect-star" aria-hidden="true">★</span></p>
-      ${import.meta.env.DEV ? '<p class="unlock-note">Development: locked worlds and levels open when clicked, for this session only.</p>' : ""}
+      ${import.meta.env.DEV ? '<p class="unlock-note">Development: locked worlds and levels open when clicked, for this session only. <button class="text-button dev-link" type="button" data-action="sound-board">Open the sound board</button></p>' : ""}
       <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
     </main>
   `;
@@ -259,6 +290,37 @@ const MAP_LAYOUTS = {
   wide: [[9, 72], [29, 47], [50, 71], [71, 46], [89, 66]],
   tall: [[24, 86], [72, 72], [32, 56], [70, 39], [32, 22]],
 };
+
+// Development only: every sound effect on one page, for tuning by ear.
+const SOUND_GROUPS = [
+  ["Planning", ["premove", "undo", "illegal", "submit"]],
+  ["Playback", ["move", "capture", "check", "castle", "promote", "mate"]],
+  ["Results", ["win", "perfect", "poppers", "defeat", "draw"]],
+  ["Menus and maps", ["click", "open", "back", "lock", "pop", "trail", "hop", "flag", "stamp", "unlock-world"]],
+];
+
+function renderSoundBoard() {
+  const listed = SOUND_GROUPS.flatMap(([, names]) => names);
+  const missing = SOUND_NAMES.filter((name) => !listed.includes(name));
+  const groups = [...SOUND_GROUPS, ...(missing.length ? [["Other", missing]] : [])];
+  return `
+    ${renderHeader()}
+    <main class="sound-board">
+      <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
+      <h1>Sound board</h1>
+      <p class="sound-board-copy">Every effect, synthesized live by <code>src/effects/sound.js</code>. Board sounds also have an opponent variant.${sounds.isMuted() ? " Sound is muted: press M to hear them." : ""}</p>
+      ${groups.map(([title, names]) => `
+        <section>
+          <h2>${title}</h2>
+          <div class="sound-board-grid">
+            ${names.map((name) => `<button class="secondary-button" type="button" data-action="play-sound" data-sound="${name}">${name}</button>`).join("")}
+            ${title === "Playback" ? names.map((name) => `<button class="secondary-button is-opponent" type="button" data-action="play-sound" data-sound="${name}" data-opponent="true">${name} · opponent</button>`).join("") : ""}
+          </div>
+        </section>
+      `).join("")}
+    </main>
+  `;
+}
 
 function trailSegment(points, index) {
   // Catmull-Rom through the nodes, as one cubic Bézier per segment
@@ -697,6 +759,7 @@ function prefersReducedMotion() {
 // solve (which also gets the gold cannons when its card appears). Runs once, as mate lands.
 function celebrateMate({ square, perfect }) {
   navigator.vibrate?.([24, 40, 70]);
+  sounds.play(perfect ? "perfect" : "win", { when: 0.22 }); // after the mating move's thud
   if (prefersReducedMotion()) {
     return; // the static red glow and tipped king (CSS) still mark the mate
   }
@@ -746,6 +809,8 @@ function render() {
     app.innerHTML = renderStage();
   } else if (state.screen === "puzzle") {
     app.innerHTML = renderPuzzle();
+  } else if (state.screen === "sounds" && import.meta.env.DEV) {
+    app.innerHTML = renderSoundBoard();
   }
 
   const moveList = app.querySelector(".move-list-wrap");
@@ -765,9 +830,16 @@ function render() {
   if (celebration && state.screen === "puzzle") {
     celebrateMate(celebration);
   }
-  // A perfect solve gets a second, golden volley when its result card appears.
-  if (state.revealOutcome && state.screen === "puzzle" && state.snapshot?.perfect && !prefersReducedMotion()) {
-    cannons();
+  if (state.revealOutcome && state.screen === "puzzle") {
+    const { outcome, perfect } = state.snapshot;
+    if (outcome === "defeat" || outcome === "draw") {
+      sounds.play(outcome); // wins already got their fanfare as mate landed
+    }
+    // A perfect solve gets a second, golden volley when its result card appears.
+    if (outcome === "victory" && perfect && !prefersReducedMotion()) {
+      cannons();
+      sounds.play("poppers");
+    }
   }
   state.revealOutcome = false;
   if (!state.transitioning) {
@@ -806,11 +878,20 @@ function playMapEffects() {
   for (const element of freshElements) {
     const effect = element.dataset.fresh;
     delete element.dataset.fresh;
+    // Sounds are timed to land with their animation's key moment (see worlds.css keyframes).
+    // With reduced motion the animations are skipped, so only the untimed cues play.
     if (effect === "draw") {
+      if (!reduced && element.getBoundingClientRect().width > 0) {
+        sounds.play("trail", { when: 0.12 }); // the wide and tall trails both carry the flag
+      }
       drawTrail(element, reduced);
     } else if (effect === "hop") {
+      if (!reduced) {
+        sounds.play("hop", { when: 0.26 });
+      }
       hopToken(element, Number(element.dataset.hopTo), reduced);
     } else if (effect === "unlock-world") {
+      sounds.play("unlock-world");
       element.classList.add("is-unlocking");
       element.classList.remove("is-locked");
       if (!reduced) {
@@ -830,8 +911,12 @@ function playMapEffects() {
         }, 420);
       }
     } else if (effect === "raise-flag") {
+      if (!reduced) {
+        sounds.play("flag", { when: 0.2 });
+      }
       element.classList.add("is-raised", "is-raising");
     } else if (effect === "stamp") {
+      sounds.play("stamp", { when: reduced ? 0 : 0.74 }); // the stamp's impact frame
       element.classList.add("is-stamping");
       if (!reduced) {
         const rect = element.getBoundingClientRect();
@@ -845,7 +930,12 @@ function playMapEffects() {
         }), 520);
       }
     } else {
-      element.classList.add("is-animating"); // trail draw, level unlock: CSS keyframes
+      // a level unlocking: the padlock wiggles and springs off, then the node pops
+      if (!reduced) {
+        sounds.play("lock");
+      }
+      sounds.play("pop", { when: reduced ? 0 : 0.6 });
+      element.classList.add("is-animating");
     }
   }
 }
@@ -987,8 +1077,10 @@ function queueSelectedMove(from, to, promotion) {
   try {
     state.snapshot = state.session.queueMove({ from, to, promotion });
     state.interactionError = "";
+    sounds.play("premove");
   } catch (error) {
     state.interactionError = error.message;
+    sounds.play("illegal");
   }
   state.selectedSquare = null;
   state.promotionRequest = null;
@@ -999,6 +1091,7 @@ function attemptMove(from, to) {
   const options = state.session.legalMovesFrom(from).filter((move) => move.to === to);
   if (options.length === 0) {
     state.interactionError = `That move is not legal from ${from}.`;
+    sounds.play("illegal");
     state.selectedSquare = null;
     render();
     return;
@@ -1060,6 +1153,7 @@ function recordWin(level, perfect) {
 }
 
 async function submitPremoves() {
+  sounds.play("submit");
   state.interactionError = "";
   state.executionError = "";
   // every submitted line counts as an attempt; shown on the puzzle page
@@ -1090,6 +1184,7 @@ async function submitPremoves() {
           || previousMove.san !== currentMove.san
         )) {
           state.pendingPieceMove = { from: currentMove.from, to: currentMove.to };
+          sounds.play(soundForMove(currentMove), { opponent: currentMove.color !== snapshot.playerColor });
         }
         if (snapshot.matedKing && !state.snapshot?.matedKing) {
           state.pendingCelebration = {
@@ -1127,28 +1222,44 @@ app.addEventListener("click", (event) => {
       if (!state.engine || state.snapshot?.phase === "playing") {
         return;
       }
+      sounds.play("back");
       openWorldMap();
     } else if (action === "open-stage") {
       if (state.snapshot?.phase === "playing") {
         return;
       }
+      sounds.play(state.screen === "index" ? "open" : "back"); // into a world, or back up to it
       openStage(actionElement.dataset.stageId);
     } else if (action === "retry-setup") {
+      sounds.play("click");
       void initializeApp();
     } else if (action === "open-level") {
+      sounds.play("open");
       openLevel(actionElement.dataset.levelId);
+    } else if (action === "toggle-sound") {
+      toggleSound();
+    } else if (action === "sound-board" && import.meta.env.DEV) {
+      sounds.play("open");
+      navigate(() => {
+        state.screen = "sounds";
+      });
+    } else if (action === "play-sound") {
+      sounds.play(actionElement.dataset.sound, { opponent: actionElement.dataset.opponent === "true" });
     } else if (action === "submit" && state.snapshot.phase === "planning") {
       void submitPremoves();
     } else if (action === "undo" && state.snapshot.phase === "planning") {
+      sounds.play("undo");
       state.snapshot = state.session.undoPremove();
       state.interactionError = "";
       state.selectedSquare = null;
       render();
     } else if (action === "retry-puzzle") {
+      sounds.play("click");
       openLevel(state.level.id);
     } else if (action === "next-level") {
       const next = nextLevelInStage();
       if (next) {
+        sounds.play("open");
         openLevel(next.id);
       }
     } else if (action === "choose-promotion") {
@@ -1157,6 +1268,7 @@ app.addEventListener("click", (event) => {
         queueSelectedMove(request.from, request.to, actionElement.dataset.promotion);
       }
     } else if (action === "cancel-promotion") {
+      sounds.play("click");
       state.promotionRequest = null;
       render();
     }
@@ -1302,9 +1414,16 @@ app.addEventListener("keydown", (event) => {
 });
 
 // Escape on a level map goes back to the world map, like backing out of a game menu.
+// M toggles sound, as in most games.
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.screen === "stage" && !event.defaultPrevented) {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+  if (event.key === "Escape" && state.screen === "stage") {
+    sounds.play("back");
     openWorldMap();
+  } else if ((event.key === "m" || event.key === "M") && state.engine && !event.target.closest?.("input, textarea, select")) {
+    toggleSound();
   }
 });
 

@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stages/world-map PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, and 52 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the sound-effects PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects, and 56 passing tests.
 
 ---
 
@@ -59,6 +59,7 @@ src/
     generated/premove-engine.js            GENERATED WASM module (Emscripten, SINGLE_FILE). Committed.
     generated/premove-engine.sources.sha256 fingerprint of the C++ it was built from
   effects/confetti.js     dependency-free canvas confetti: burst(), cannons(), PALETTES
+  effects/sound.js        synthesized sound effects (Web Audio, no audio files): createSoundPlayer, synthesize, soundForMove
   assets/pieces/*.png     Neo piece images (fall back to Unicode glyphs if missing)
 test/                     node:test suites (see §7)
 scripts/wasm-stamp.mjs    write/check the WASM source fingerprint
@@ -199,6 +200,17 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
+### 4.8 Sound effects (`effects/sound.js`)
+
+- **Every sound is synthesized** with the Web Audio API (oscillators, filtered noise, envelopes); there are no audio files to license or load. `synthesize(context, destination, name, at, {opponent})` builds one sound; `createSoundPlayer()` wraps a lazily created `AudioContext` (made on the first sound, which always follows a click, so there are no autoplay warnings) and a mute flag stored in localStorage key `chess-premove-sound-v1` (`"on"`/`"off"`).
+- **Sounds** (`SOUND_NAMES`): board `premove`, `undo`, `illegal`, `submit`, `move`, `capture`, `check`, `castle`, `promote`, `mate`; results `win`, `perfect`, `poppers` (the perfect-solve cannons), `defeat`, `draw`; menus/maps `click`, `open`, `back`, `lock`, `pop`, `trail`, `hop`, `flag`, `stamp`, `unlock-world`. Played moves pick theirs from SAN with `soundForMove` (`#` mate, `+` check, `=` promote, `O-O` castle, `x` capture); Black's replies are pitched ~14% lower (`opponent`).
+- **Where they fire** (`main.js`): queueing/undoing/rejecting a premove; submit; each played move; the mate fanfare (`win`/`perfect`, 0.22 s after the mating move, in `celebrateMate`); `defeat`/`draw` when their result card appears (gentle two-note marimba, never a "sad trombone"); `poppers` with the gold cannons; navigation (`open` going deeper, `back` going up, `click` for other buttons); and each map effect in `playMapEffects`, scheduled with `when` to land on its animation's key frame (lock wiggle at 0, node `pop` at 0.6 s, `trail` 0.12 s, `hop` 0.26 s with the landing tap built in, `flag` 0.2 s, `stamp` 0.74 s = the stamp's impact). With reduced motion the animation-synced cues (`lock`, `trail`, `hop`, `flag`) are skipped and the rest play untimed.
+- **Mute:** a speaker toggle in the top bar and the **M** key. Toggling updates the button in place (no re-render), so map animations aren't interrupted.
+- **Output stage:** a WaveShaper soft-clipper (linear to 0.6, rounded above), *not* a DynamicsCompressor: Chrome's compressor cut every short "thock" transient by ~9 dB even with a −3 dB threshold. Noise comes from a deterministic integer LCG; a float LCG degraded into flat runs that filters turned into clicks.
+- **Levels** (offline renders, peak dBFS): board sounds −3 to −6, results −6 to −16 (losses quietest), map cues −4 to −22, UI ticks −14 to −25. Nothing clips; overlapping cues are caught by the soft-clipper.
+- **Development:** the world map links to a **sound board** that plays every sound (and the opponent variants). Every play is also logged to `window.__soundLog` (`{name, when, opponent, muted, at}`) for headless tests. Both are dev-only and stripped from production builds.
+- To tune a sound, edit its `case` in `synthesize()` and audition it on the sound board. `test/sound.test.js` runs every sound against a fake AudioContext (finite times, everything stops within 2.5 s, everything fades out).
+
 ---
 
 ## 5. Deploying
@@ -244,12 +256,13 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 52 tests in 8 files, about 25 s.
+- `npm test`: 56 tests in 9 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
   - `stages`: the 5×5 layout in `stages.json`
+  - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
@@ -260,6 +273,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Click squares via `button[data-square="e2"]`.
   - Submit with `[data-action="submit"]` and wait for `.outcome-card`.
   - Collect `pageerror` and console errors.
+  - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes.
   - Take screenshots and look at them.
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
@@ -286,6 +300,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Celebration tiers: gold plus stars plus cannons for a perfect win; half as much colourful confetti for other wins; never a "sad" win effect.
 - No Stockfish in the game. The opponent is the WASM refuter.
 - The site must stay fully static (GitHub Pages). There is no backend.
+- Sound effects are on by default, synthesized (no audio files), mutable from the top bar or with M. Wins never get a sad sound; losses get a gentle two-note cue.
 
 ---
 
@@ -295,7 +310,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
 - Touch devices can't drag (HTML5 drag and drop) or draw arrows (no right click). Click-to-move works. A pointer-events drag implementation would fix both.
-- Possible next features: sound effects (a win chime was offered), showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects).
+- Possible next features: showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
-- Map ideas not done: sound effects for unlocks and stamps, URL routing (browser Back currently leaves the app), touch-drag on maps is not needed (everything is click/tap).
+- Map ideas not done: URL routing (browser Back currently leaves the app). Touch-drag on maps is not needed (everything is click/tap).
+- iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).
