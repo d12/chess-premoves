@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the distinct-world-music PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, and 67 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the app-like-responsive-ux PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, and 67 passing tests.
 
 ---
 
@@ -39,11 +39,12 @@ The owner, Nathaniel (GitHub `d12`), designs the puzzles and plays the game; the
 
 ```
 index.html, vite.config.js (base: "./" so it works under /chess-premoves/)
+public/manifest.webmanifest, icon-*.png, apple-touch-icon.png   web-app manifest + icons (Add to Home Screen)
 src/
   main.js                 UI: rendering, events, playback, celebrations, world/level maps (≈1300 lines)
-  style.css               base styles; CSS tokens on :root (--green, --gold, --red …)
+  style.css               app shell, puzzle-page layout (container queries) and base styles; tokens on :root (--green, --gold, --gutter, --topbar-height …)
   ui/
-    worlds.css            world map, level maps and per-world themes ([data-theme] tokens, keyframes)
+    worlds.css            world map, level maps (incl. their responsive layouts) and per-world themes ([data-theme] tokens, keyframes)
     scenery.js            flat SVG landscapes per theme (renderScene) + per-theme confetti colours
   game/
     session.js            UI-independent game engine: planning, premove queue, playback (createPremoveGame)
@@ -178,7 +179,10 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 - Screens: `loading`, `index` (the **world map**), `stage` (a world's **level map**), `puzzle`, `error`.
   - **World map:** one illustrated card per world (themed SVG scene, the world's piece as landmark, 5 progress pips, status). Locked worlds are dimmed with the piece as a black silhouette and a padlock; cleared worlds get a "Cleared" / "★ Perfect" corner ribbon. A dotted road links the cards. The hero has a levels-cleared bar and a **Continue · Level S-L** button that jumps straight into the next unbeaten level.
   - **Level map:** the world's panorama with a winding trail through 5 round level nodes (locked padlock / ready with pulse ring / white ✓ completed / gold ★ perfected). The world's piece stands on the next level to play and bobs; a goal flag by level 5 is raised (gold) once the world is cleared, with a "World clear!" / "★ Perfect!" stamp. Footer: "Next up" + Play button, or "On to World N". Escape goes back to the world map. Nodes have a tall layout under 640px.
-  - Neither map shows move counts (owner's rule). The puzzle page heading shows a themed `S-L` badge, "World S, level L of 5" and pips, then chips: "Perfect in N premoves", "N attempts" and "★ Perfected". The back button returns to the world's level map.
+  - Neither map shows move counts (owner's rule). The puzzle page heading shows a themed `S-L` badge, "World S, level L of 5" and pips, then chips: "Perfect in N premoves", "N attempts" and "★ Perfected" (in the compact heading the kicker text and pips are hidden and the chips become one line of small text). The back button returns to the world's level map. The board's labels follow chess.com: "Opponent · Black" above the board, "You · White" below it.
+  - The top bar shows the engine pill only while the engine loads ("LOADING ENGINE") or failed ("ENGINE OFFLINE"); once it's ready it disappears.
+- **System Back button** (`syncHistory`, `goBack`, `popstate` in `main.js`): while inside a world the app keeps exactly one history entry of its own, so Android back / browser Back / iOS swipe go level → level map → world map instead of leaving the game; on the world map there's no entry and Back leaves the page. Coming back up with the in-app buttons pops that entry (`ignoreNextPop`). Back while a line is playing is ignored (the entry is re-pushed); Back with the promotion picker open cancels it. There are still no URLs per screen.
+- **Layout: a full-viewport app, not a page** (see §4.7b).
 - **Navigation** goes through `navigate(update)`, which wraps the screen change in a View Transition (a world card grows into its level map via `view-transition-name: world-scene-N`). Skipped without browser support or with reduced motion. The transition overlay takes input for ~420 ms.
 - **Win → map animations.** `recordWin()` notes what a win opened in `state.fresh` (`unlockedLevel`/`hopFrom`, `clearedStage`, `unlockedStage`). The next render of the relevant map consumes it and marks elements with `data-fresh`; `playMapEffects()` runs after the transition finishes: the new level's lock shakes off and it pops, its trail segment draws on (dash length measured in screen pixels, because the trail uses `vector-effect: non-scaling-stroke`), the piece hops to it; on a world clear the flag rises, the stamp lands and themed confetti fires; on the world map the new world's lock bursts and its colours flood back. Playing the unlocked level straight away (Next level) drops its pending animation.
 - **Board DOM.** `.board` is a CSS grid of 64 `<button class="square" data-square="e4">` elements, white at the bottom. It also holds two SVG overlays with `viewBox="0 0 8 8"`: `.board-highlights` (z 1, under the pieces) and `.board-arrows` (z 4, above everything). `.piece` has z-index 2 and coordinates have 3. **Only real squares may carry `data-square`**, because code uses `querySelector('[data-square=…]')` and `closest('[data-square]')`. Overlays use `data-highlight` and `data-from`/`data-to`.
@@ -200,6 +204,18 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
+
+### 4.7b Layout and responsiveness
+
+The owner's brief: it should feel and flow like an app, not a website, on every screen; no scrolling except where it's obviously needed.
+
+- **App shell** (`style.css`): `html, body` never scroll (`overflow: hidden`, `overscroll-behavior: none`, so no rubber-banding or pull-to-refresh). `#app` is a `100dvh` flex column with safe-area padding (`viewport-fit=cover`): the top bar, then the screen's `<main>` (`flex: 1; min-height: 0`). No text selection, tap highlight or long-press callouts in `#app`; `touch-action: manipulation` (no double-tap zoom; pinch zoom still works). Hover effects are wrapped in `@media (hover: hover)` so taps don't leave buttons stuck in their hover state; buttons press down on `:active` instead. Tap targets are ≥ 40 px (`.icon-toggle` grows to 40 px under `pointer: coarse`).
+- **Every screen is a CSS size container** and lays itself out by its own size, not by viewport breakpoints: `worlds` (`.world-screen`), `stage` (`.stage-screen`), `map` (`.stage-map`), `puzzle` (`.puzzle-screen`) and `board` (`.board-column`). Lengths in `cqw/cqh/cqmin` scale things inside them.
+- **Puzzle page.** Default (portrait/narrow) is a column: one-row heading (round ← button, badge, title, chips line), the board as large as fits (`.board-frame` width = `min(100cqw, 100cqh − labels)` of `.board-column`), and the controls at the bottom (move strip + Done/Undo). The controls' grid row reserves `--panel-reserve` (190 px; 150 px when the screen is ≥ 560 px wide, where the result card puts its buttons beside the text), so **the board keeps exactly the same size from planning through playback to the result**. When the screen is wide enough that the board is bigger beside the controls than above them (the `@container puzzle (min-aspect-ratio: 5/4) or …` query, used in both CSS files), the board takes the full height on the left and the heading + a full side panel sit on the right; on short wide screens (phones on their side, ≤ 560 px tall) that side column is compacted. Boards under 440 px tall drop the "Opponent/You" labels. On short portrait phones (≤ 640 px) the played-move strip hides once the result card shows.
+- **World map.** Landscape (`min-aspect-ratio: 6/5`, ≥ 560 px wide): five tall cards side by side, stretched to the available height (capped at 1.75× their width). Portrait: a column of wide cards sharing the height; the hero is a grid (title and progress bar on the left, Continue on the right). The strapline and footnotes hide on short screens. The content is vertically centred (`justify-content: safe center`); `.world-screen` scrolls only if five cards truly can't fit (none of the tested sizes in production).
+- **Level map.** Heading row (round ← "All worlds" pill on wide screens, title, score), the map filling the remaining height (capped at 46 % of the width on landscape screens) and the footer. The map picks the **wide or tall trail by its own aspect ratio** (`@container map (max-aspect-ratio: 1/1)`), and nodes, token, badges and ribbon scale with it (`--node-size: clamp(44px, 13.5cqmin, 80px)`); the flag shrinks on maps under 300 px tall.
+- **Installable:** `manifest.webmanifest` (standalone display) plus apple/mobile web-app meta tags, so Add to Home Screen launches without browser chrome.
+- Container queries can't style the container itself: rules that must change with a container's size target its children (e.g. `--panel-min` is set on `.game-layout`, not `.puzzle-screen`).
 
 ### 4.8 Sound effects (`effects/sound.js`)
 
@@ -298,6 +314,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Collect `pageerror` and console errors.
   - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes. For music, render bars with `scheduleRange` into an `OfflineAudioContext` (through the same low-pass/high-pass chain), measure levels per scene against the effects, encode MP3s with `ffmpeg` and send them to the owner; on the dev server, `window.__music.state()` gives `{ world, scene, bar, … }`.
   - Take screenshots and look at them.
+  - **Layout sweep** (after any CSS change): drive every screen (world map, level map, planning, a queued line with a selection, playing, perfect result, defeat, cleared level map) at phone portrait/landscape (280×653 fold, 360×640, 375×667, 390×844, 430×932, 640×360, 667×375, 844×390, 932×430), tablets (768×1024, 1024×768, 1024×1366, 1366×1024) and desktop windows (800×600, 1280×720, 1366×768, 1440×900, 1920×1080, 2560×1080, 1200×560, 520×1000), with `isMobile`/`hasTouch` for phones and tablets. For each, assert `document.scrollingElement.scrollHeight − innerHeight === 0` (and the same horizontally), that no button/heading/board is outside the viewport unless inside a scroller, that buttons are ≥ 32 px, and that the board's width is identical across planning/playing/result. Also check the promotion picker fits (level 5-1: d4–d5–d6–d7–d8), the system Back flow (`page.goBack()`), and resizing mid-level (portrait ↔ landscape). Seed progress with `addInitScript` + `localStorage`.
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
   - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
@@ -333,9 +350,10 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **`public/engine/`** holds about 40 MB of unused Stockfish files (GPL-licensed) that Vite copies into every deploy. Deleting the folder would shrink the site to about 300 KB. This was offered to the owner but not yet done.
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
-- Touch devices can't drag (HTML5 drag and drop) or draw arrows (no right click). Click-to-move works. A pointer-events drag implementation would fix both.
+- Touch devices can't drag (HTML5 drag and drop) or draw arrows (no right click). Tap-to-move works. A pointer-events drag implementation would fix both; it's the biggest remaining mobile gap.
 - Possible next features: showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
-- Map ideas not done: URL routing (browser Back currently leaves the app). Touch-drag on maps is not needed (everything is click/tap).
+- Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
+- No service worker, so the installed app still needs a connection (the whole game is ~350 KB plus the unused `public/engine/`).
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).

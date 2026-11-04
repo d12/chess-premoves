@@ -99,7 +99,8 @@ function renderPiece(color, type) {
 }
 
 function renderHeader() {
-  const engineStatus = state.engine ? "ENGINE READY" : "ENGINE SETUP";
+  // the engine's status only shows while it loads (or failed): once it's ready, it just is
+  const engineStatus = state.screen === "error" ? "ENGINE OFFLINE" : "LOADING ENGINE";
   const showStars = state.engine && state.progressStore;
   const stars = showStars ? state.progressStore.perfectedIds().length : 0;
   return `
@@ -112,9 +113,7 @@ function renderHeader() {
         ${showStars ? `<span class="star-counter ${stars ? "has-stars" : ""}" title="Perfect solves" aria-label="${stars} of ${LEVELS.length} levels perfected"><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small></span>` : ""}
         ${renderMusicToggle()}
         ${renderSoundToggle()}
-        <span class="engine-pill ${state.engine ? "is-ready" : ""}">
-          <span class="status-dot"></span>${engineStatus}
-        </span>
+        ${state.engine ? "" : `<span class="engine-pill"><span class="status-dot"></span>${engineStatus}</span>`}
       </span>
     </header>
   `;
@@ -317,7 +316,7 @@ function renderWorldMap() {
 
   return `
     ${renderHeader()}
-    <main class="world-screen">
+    <main class="world-screen scroll-area">
       <section class="world-hero">
         <div class="world-hero-copy">
           <h1>Pick a world</h1>
@@ -366,7 +365,7 @@ function renderSoundBoard() {
   const groups = [...SOUND_GROUPS, ...(missing.length ? [["Other", missing]] : [])];
   return `
     ${renderHeader()}
-    <main class="sound-board">
+    <main class="sound-board scroll-area">
       <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
       <h1>Sound board</h1>
       <p class="sound-board-copy">Every effect, synthesized live by <code>src/effects/sound.js</code>. Board sounds also have an opponent variant.${sounds.isMuted() ? " Sound is muted: press M to hear them." : ""}</p>
@@ -503,17 +502,15 @@ function renderStage() {
     ${renderHeader()}
     <main class="stage-screen" data-theme="${stage.theme}">
       <div class="stage-heading">
-        <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
-        <div class="stage-title-row">
-          <div class="stage-title">
-            <p class="world-number">World ${stage.id}</p>
-            <h1>${escapeHTML(stage.name)}</h1>
-            <p class="stage-tagline">${escapeHTML(stage.tagline)}</p>
-          </div>
-          <div class="stage-score" aria-label="${progress.completed} of ${progress.total} levels cleared, ${progress.perfected} perfect">
-            ${renderPips(stage, "is-large")}
-            <span>${progress.completed}/${progress.total} cleared${progress.perfected ? ` · <span class="perfect-count">★ ${progress.perfected}</span>` : ""}</span>
-          </div>
+        <button class="back-button round-back" type="button" data-action="home" aria-label="All worlds"><span aria-hidden="true">←</span><span class="back-label">All worlds</span></button>
+        <div class="stage-title">
+          <p class="world-number">World ${stage.id}</p>
+          <h1>${escapeHTML(stage.name)}</h1>
+          <p class="stage-tagline">${escapeHTML(stage.tagline)}</p>
+        </div>
+        <div class="stage-score" aria-label="${progress.completed} of ${progress.total} levels cleared, ${progress.perfected} perfect">
+          ${renderPips(stage, "is-large")}
+          <span>${progress.completed}/${progress.total} cleared${progress.perfected ? ` · <span class="perfect-count">★ ${progress.perfected}</span>` : ""}</span>
         </div>
       </div>
       <section class="stage-map ${progress.unlocked ? "" : "is-locked"}" style="view-transition-name: world-scene-${stage.id}" aria-label="Levels of ${escapeHTML(stage.name)}">
@@ -747,9 +744,9 @@ function renderPuzzle() {
 
         <section class="board-column" aria-label="Puzzle board">
           <div class="board-frame">
-            <div class="board-player-label"><span class="player-dot"></span>You · White</div>
+            <div class="board-label is-opponent">Opponent · Black</div>
             ${board}
-            <div class="board-bottom-label">OPPONENT · BLACK</div>
+            <div class="board-label is-player"><span class="player-dot"></span>You · White</div>
           </div>
         </section>
 
@@ -916,7 +913,60 @@ function render() {
     playMapEffects();
   }
   music.update(musicTarget());
+  syncHistory();
 }
+
+// ---- The system Back button ----
+// While you're inside a world the app keeps one history entry of its own, so Back (Android's
+// back button or gesture, the browser's Back, a swipe on iOS) steps up through the screens
+// like an app's back button (level → level map → world map) instead of leaving the game.
+// On the world map there is no entry left, so Back leaves the page as usual.
+let historyEntry = false;
+let ignoreNextPop = false;
+
+function syncHistory() {
+  if (!window.history?.pushState) {
+    return;
+  }
+  const inside = state.screen === "stage" || state.screen === "puzzle" || state.screen === "sounds";
+  if (inside && !historyEntry) {
+    history.pushState({ premove: "in-game" }, "");
+    historyEntry = true;
+  } else if (state.screen === "index" && historyEntry) {
+    // came back up with the in-app buttons: drop the entry so Back now leaves the page
+    historyEntry = false;
+    ignoreNextPop = true;
+    history.back();
+  }
+}
+
+function goBack() {
+  if (state.screen === "puzzle") {
+    if (state.promotionRequest) {
+      state.promotionRequest = null;
+      render();
+    } else if (state.snapshot?.phase === "playing") {
+      syncHistory(); // can't leave mid-line: put the entry back
+    } else {
+      sounds.play("back");
+      openStage(state.level.stageId);
+    }
+  } else if (state.screen === "stage" || state.screen === "sounds") {
+    sounds.play("back");
+    openWorldMap();
+  }
+}
+
+window.addEventListener("popstate", () => {
+  if (ignoreNextPop) {
+    ignoreNextPop = false;
+    return;
+  }
+  if (historyEntry) {
+    historyEntry = false;
+    goBack();
+  }
+});
 
 // Screen changes cross-fade, and a world card grows into its level map (View Transitions,
 // where supported). Map animations wait until the transition has finished.

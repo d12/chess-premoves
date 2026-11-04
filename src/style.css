@@ -7,6 +7,8 @@
   text-rendering: optimizeLegibility;
   font-optical-sizing: auto;
   font-weight: 400;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   --page: #f5f7f3;
   --surface: #ffffff;
   --surface-soft: #f0f3ed;
@@ -21,15 +23,39 @@
   --gold-ink: #7d5c06;
   --gold-pale: #fbf0c9;
   --gold-border: #e1c262;
+  /* the app frame: side gutters and the top bar shrink on small screens */
+  --gutter: clamp(12px, 3vw, 24px);
+  --topbar-height: 64px;
+}
+
+@media (max-width: 640px), (max-height: 640px) {
+  :root {
+    --topbar-height: 52px;
+  }
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* ---------- App shell ----------
+   The game is a fixed, full-viewport app: the document never scrolls, rubber-bands or
+   pull-to-refreshes. Each screen fits the space under the top bar, and the few places that
+   genuinely need scrolling (a long move list, the world list on a short phone) scroll
+   inside themselves. */
+
+html,
 body {
-  min-width: 320px;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html {
+  touch-action: manipulation; /* no double-tap zoom; pinch zoom still works */
+}
+
+body {
   margin: 0;
   color: var(--ink);
   background:
@@ -37,9 +63,44 @@ body {
     var(--page);
 }
 
+#app {
+  height: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* app, not a document: no text selection, image callouts or grey tap flashes */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: default;
+}
+
+#app > main {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* a screen (or part of one) that scrolls inside itself when its content doesn't fit */
+.scroll-area {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(52, 67, 45, 0.25) transparent;
+  touch-action: pan-y;
+}
+
 button {
   color: inherit;
   font: inherit;
+  touch-action: manipulation;
 }
 
 button:focus-visible {
@@ -48,20 +109,23 @@ button:focus-visible {
 }
 
 .topbar {
-  width: min(1240px, calc(100% - 48px));
-  height: 70px;
+  width: min(1240px, calc(100% - 2 * var(--gutter)));
+  height: var(--topbar-height);
+  flex: none;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   border-bottom: 1px solid rgba(52, 67, 45, 0.12);
 }
 
 .brand {
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 0;
+  padding: 4px 0;
   border: 0;
   color: #293326;
   background: transparent;
@@ -89,26 +153,25 @@ button:focus-visible {
   font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.07em;
-}
-
-.engine-pill.is-ready {
-  border-color: #cbd9c1;
-  color: #4a653d;
+  white-space: nowrap;
 }
 
 .status-dot,
 .player-dot {
   width: 7px;
   height: 7px;
+  flex: none;
   display: inline-block;
   border-radius: 50%;
   background: var(--green-bright);
 }
 
-.app-shell {
-  width: min(1120px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 48px 0;
+.status-dot {
+  animation: status-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  50% { opacity: 0.3; }
 }
 
 .eyebrow {
@@ -127,29 +190,38 @@ p {
   margin-top: 0;
 }
 
+/* ---------- Loading and error screens ---------- */
+
 .setup-screen {
-  width: min(540px, calc(100% - 32px));
-  min-height: calc(100vh - 71px);
+  width: min(540px, calc(100% - 2 * var(--gutter)));
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 42px 0 68px;
+  padding: 16px 0 5vh;
   text-align: center;
 }
 
 .setup-emblem {
-  width: 70px;
-  height: 70px;
+  width: clamp(48px, 10vh, 70px);
+  height: clamp(48px, 10vh, 70px);
   display: grid;
   place-items: center;
-  margin-bottom: 24px;
+  margin-bottom: clamp(12px, 3vh, 24px);
   border: 1px solid #d3dfca;
-  border-radius: 21px;
+  border-radius: 30%;
   color: var(--green);
   background: linear-gradient(145deg, #f3f7ef, #e8eee2);
-  font-size: 2.3rem;
+  font-size: clamp(1.7rem, 5vh, 2.3rem);
+}
+
+.setup-screen .setup-emblem:not(.error-emblem) {
+  animation: emblem-bob 1.6s ease-in-out infinite;
+}
+
+@keyframes emblem-bob {
+  50% { transform: translateY(-6px); }
 }
 
 .error-emblem {
@@ -161,16 +233,16 @@ p {
 .setup-screen h1 {
   max-width: 520px;
   margin: 0 0 13px;
-  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-size: clamp(1.5rem, min(5vw, 6vh), 2.75rem);
   letter-spacing: -0.05em;
   line-height: 1.06;
 }
 
 .setup-copy {
   max-width: 440px;
-  margin-bottom: 26px;
+  margin-bottom: clamp(12px, 3vh, 26px);
   color: var(--text-muted);
-  line-height: 1.65;
+  line-height: 1.55;
 }
 
 .setup-footnote {
@@ -200,22 +272,111 @@ p {
   border-top: 1px solid #e1e5de;
 }
 
+/* ---------- Puzzle screen ----------
+   The screen is a size container ("puzzle"). By default (portrait, narrow) it is a column:
+   a one-row heading, the board as big as the remaining space allows, and the controls at
+   the bottom under the thumb. When the screen is wide enough that the board would be
+   bigger beside the controls than above them, the board takes the full height on the left
+   and the heading and controls sit in a column on the right. */
+
 .puzzle-screen {
-  width: min(1800px, calc(100% - 48px));
+  --label-height: 22px; /* each of the two labels above and below the board */
+  --frame-pad: 11px;
+  --panel-min: 240px;
+  --panel-reserve: 190px;
+  --layout-gap: clamp(14px, 2.5vw, 34px);
+  width: min(1800px, calc(100% - 2 * var(--gutter)));
   margin: 0 auto;
-  padding: 20px 0 30px;
+  padding: clamp(6px, 1.6vh, 20px) 0 clamp(8px, 2.4vh, 28px);
+  container: puzzle / size;
+}
+
+.game-layout {
+  height: 100%;
+  display: grid;
+  grid-template-areas:
+    "heading"
+    "board"
+    "panel";
+  grid-template-columns: minmax(0, 1fr);
+  /* the controls' row keeps room for a result card, so the board stays the same size
+     from planning through playback to the result instead of jumping around */
+  grid-template-rows: auto minmax(0, 1fr) minmax(min(var(--panel-reserve), 36cqh), auto);
+  gap: 8px;
 }
 
 .puzzle-heading {
   grid-area: heading;
+  min-width: 0;
+  display: grid;
+  grid-template-areas:
+    "back badge title"
+    "back badge chips";
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 3px;
+}
+
+.puzzle-heading .back-button {
+  grid-area: back;
+}
+
+.puzzle-heading .level-kicker {
+  grid-area: badge;
+}
+
+.puzzle-heading h1 {
+  grid-area: title;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: clamp(1rem, 4.4cqw, 1.25rem);
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* compact heading: the chips become one line of small text under the title */
+.puzzle-heading .par-line {
+  grid-area: chips;
+  min-width: 0;
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.puzzle-heading .par-chip {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  letter-spacing: 0;
+}
+
+.puzzle-heading .par-chip + .par-chip::before {
+  color: var(--text-muted);
+  font-weight: 400;
+  content: " · ";
+}
+
+.puzzle-heading .eyebrow {
+  display: none;
 }
 
 .back-button {
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 21px;
-  padding: 4px 0;
+  padding: 4px 2px;
   border: 0;
   color: #687365;
   background: transparent;
@@ -223,8 +384,10 @@ p {
   cursor: pointer;
 }
 
-.back-button:hover:not(:disabled) {
-  color: #263322;
+@media (hover: hover) {
+  .back-button:hover:not(:disabled) {
+    color: #263322;
+  }
 }
 
 .back-button:disabled {
@@ -232,56 +395,79 @@ p {
   cursor: wait;
 }
 
-.puzzle-heading h1 {
-  margin: 0;
-  font-size: clamp(1.5rem, 2.5vw, 2rem);
-  letter-spacing: -0.055em;
+/* the compact heading's back button: a round icon button */
+.puzzle-heading .back-button {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 50%;
+  color: #45523e;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 1.05rem;
 }
 
-.game-layout {
-  display: grid;
-  grid-template-areas:
-    "board heading"
-    "board panel";
-  grid-template-columns: minmax(0, min(1100px, max(0px, calc(100dvh - 170px)))) minmax(280px, min(430px, 30%));
-  grid-template-rows: auto minmax(0, 1fr);
-  align-items: start;
-  justify-content: center;
-  gap: 20px clamp(20px, 3vw, 34px);
+.puzzle-heading .back-label {
+  display: none;
 }
 
 .board-column {
   grid-area: board;
-  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container: board / size;
 }
 
+/* The framed board fills its column: as wide as it is allowed, but never taller. */
 .board-frame {
-  width: 100%;
-  margin: 0 auto;
-  padding: 11px;
+  width: min(100cqw, max(0px, 100cqh - 2 * var(--label-height)));
+  flex: none;
+  padding: 0 var(--frame-pad);
   border: 1px solid var(--surface-border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 0 10px 28px rgba(48, 60, 42, 0.08);
 }
 
-.board-player-label,
-.board-bottom-label {
+.board-label {
+  height: var(--label-height);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 1px 3px 9px;
-  color: #485343;
-  font-size: 0.71rem;
-  font-weight: 700;
-}
-
-.board-bottom-label {
-  justify-content: flex-end;
-  padding: 9px 3px 1px;
+  padding: 0 3px;
+  overflow: hidden;
   color: #778071;
   font-size: 0.6rem;
+  font-weight: 700;
   letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.board-label.is-player {
+  color: #485343;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+/* small boards: drop the labels and the frame margin, the board is what matters */
+@container board (max-height: 440px) {
+  .board-frame {
+    --label-height: 0px;
+    --frame-pad: 0px;
+    padding: 5px;
+    border-radius: 9px;
+    width: min(100cqw, 100cqh);
+  }
+
+  .board-label {
+    display: none;
+  }
 }
 
 .board {
@@ -436,24 +622,27 @@ p {
 }
 
 .rank-coordinate {
-  top: 4px;
-  left: 4px;
+  top: 4%;
+  left: 4%;
 }
 
 .file-coordinate {
-  right: 4px;
-  bottom: 3px;
+  right: 4%;
+  bottom: 3%;
 }
+
+/* ---------- Controls ----------
+   Compact by default: a strip of queued moves and one row of buttons. The wide layout
+   (below) turns this into a full side panel. */
 
 .control-panel {
   grid-area: panel;
-  height: 0;
-  min-height: 100%;
+  align-self: end;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  padding: 20px;
+  padding: 8px;
   border: 1px solid var(--surface-border);
   border-radius: 12px;
   background: var(--surface);
@@ -466,22 +655,30 @@ p {
 
 .panel-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 6px;
 }
 
 .panel-top h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 0.9rem;
   letter-spacing: -0.035em;
 }
 
 .move-count {
-  margin-top: 4px;
   color: #747d70;
   font-size: 0.69rem;
   white-space: nowrap;
+}
+
+.panel-top .eyebrow,
+.panel-copy,
+.panel-footnote,
+.control-panel:has(.outcome-card) .panel-top,
+.control-panel:has(.run-status) .panel-top {
+  display: none;
 }
 
 .panel-copy {
@@ -492,42 +689,58 @@ p {
   line-height: 1.6;
 }
 
+/* the queued moves: one horizontal strip, scrolled to the newest move */
 .move-list-wrap {
-  flex: 1 1 136px;
-  min-height: 0;
-  max-height: 260px;
-  overflow-y: auto;
-  padding: 11px;
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  padding: 4px;
   border: 1px solid #e0e5dc;
   border-radius: 8px;
   background: #f7f8f5;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.move-list-wrap::-webkit-scrollbar {
+  display: none;
 }
 
 .empty-line {
-  margin: 0;
+  margin: 0 4px;
+  overflow: hidden;
   color: #81897c;
   font-size: 0.74rem;
   line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .move-list {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .move-list li {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 8px 9px;
+  gap: 5px;
+  padding: 5px 7px;
   border: 1px solid #e4e8e0;
   border-radius: 6px;
   color: #30382c;
   background: #fff;
   font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .move-list li span {
@@ -536,40 +749,32 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-.outcome-card ~ .move-list-wrap .move-list {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.outcome-card ~ .move-list-wrap .move-list li {
-  gap: 5px;
-  padding: 6px 5px;
-}
-
 .planning-actions {
   display: grid;
-  gap: 8px;
-  margin-top: 15px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .submit-short-label,
-.undo-short-label {
+.undo-label {
   display: none;
 }
 
 .primary-button,
 .secondary-button,
 .text-button {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 14px;
+  padding: 6px 14px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 9px;
   font-size: 0.8rem;
   font-weight: 750;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 130ms ease, border-color 130ms ease, transform 130ms ease;
 }
@@ -577,16 +782,18 @@ p {
 .primary-button {
   color: #fff;
   background: #557646;
+  box-shadow: 0 3px 0 #3b5530;
 }
 
-.primary-button:hover:not(:disabled) {
-  background: #46663a;
-  transform: translateY(-1px);
+.primary-button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #3b5530;
 }
 
 .primary-button:disabled {
   color: #828b7c;
   background: #e4e9e0;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -596,9 +803,8 @@ p {
   background: #f5f7f2;
 }
 
-.secondary-button:hover:not(:disabled) {
-  border-color: #b7c6ac;
-  background: #edf2e8;
+.secondary-button:active:not(:disabled) {
+  background: #e6ede0;
 }
 
 .secondary-button:disabled {
@@ -607,14 +813,24 @@ p {
 }
 
 .text-button {
-  min-height: auto;
-  padding: 8px 4px;
+  padding: 6px 8px;
   color: #687365;
   background: transparent;
 }
 
-.text-button:hover {
-  color: #273323;
+@media (hover: hover) {
+  .primary-button:hover:not(:disabled) {
+    background: #46663a;
+  }
+
+  .secondary-button:hover:not(:disabled) {
+    border-color: #b7c6ac;
+    background: #edf2e8;
+  }
+
+  .text-button:hover {
+    color: #273323;
+  }
 }
 
 .panel-footnote {
@@ -625,17 +841,17 @@ p {
 }
 
 .inline-error {
-  margin: 12px 0 0;
+  margin: 4px 0;
   color: #a93630;
   font-size: 0.75rem;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .run-status {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-top: 15px;
+  margin: 4px 0;
   color: #48613c;
   font-size: 0.82rem;
   font-weight: 700;
@@ -651,24 +867,28 @@ p {
 }
 
 .outcome-card {
-  margin-top: 15px;
-  padding: 14px;
+  margin: 0;
+  padding: 10px;
   border: 1px solid #dce2d7;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #f7f8f5;
 }
 
+.outcome-card .eyebrow {
+  display: none;
+}
+
 .outcome-card h3 {
-  margin: 0 0 6px;
-  font-size: 1.28rem;
+  margin: 0 0 2px;
+  font-size: 1.05rem;
   letter-spacing: -0.035em;
 }
 
 .outcome-card > p:not(.eyebrow) {
   margin: 0;
   color: #626d5b;
-  font-size: 0.78rem;
-  line-height: 1.5;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .outcome-card.is-victory {
@@ -681,6 +901,8 @@ p {
 }
 
 .outcome-card.is-perfect {
+  position: relative;
+  overflow: hidden;
   border-color: var(--gold-border);
   background: linear-gradient(145deg, #fffaea, var(--gold-pale));
 }
@@ -702,11 +924,6 @@ p {
 .outcome-card.is-perfect.is-revealing .perfect-star {
   display: inline-block;
   animation: star-spin-in 760ms 220ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
-}
-
-.outcome-card.is-perfect {
-  position: relative;
-  overflow: hidden;
 }
 
 .outcome-card.is-perfect.is-revealing::after {
@@ -741,10 +958,10 @@ p {
 }
 
 .outcome-card > p.perfect-hint {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   color: #8a6a12;
-  font-size: 0.76rem;
-  line-height: 1.45;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .par-line {
@@ -765,6 +982,7 @@ p {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .par-chip.is-attempts {
@@ -788,7 +1006,6 @@ p {
   color: #a13a34;
 }
 
-
 .outcome-card.is-error {
   border-color: #e8c9c5;
   background: #fbf1ef;
@@ -796,24 +1013,477 @@ p {
 
 .outcome-card.is-error .secondary-button {
   width: 100%;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
+/* Retry / Next / Level map: one row when they fit, wrapping on the narrowest phones */
 .outcome-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
-.outcome-actions .text-button {
-  grid-column: 1 / -1;
+.outcome-actions > * {
+  flex: 1 1 0;
+  min-width: max-content;
+  padding-inline: 10px;
+}
+
+/* portrait tablets and wide phones: the result card lays its buttons out beside the text,
+   so the controls need less room and the board gets more */
+@container puzzle (min-width: 560px) {
+  .game-layout {
+    --panel-reserve: 150px;
+  }
+
+  .outcome-card:not(.is-error) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 14px;
+  }
+
+  .outcome-card:not(.is-error) > :not(.outcome-actions) {
+    grid-column: 1;
+  }
+
+  .outcome-card:not(.is-error) > .outcome-actions {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    margin: 0;
+  }
+}
+
+/* short portrait phones: after a result the card takes the strip's place (the final
+   position is on the board) so the board doesn't have to shrink for it */
+@container puzzle (max-height: 640px) {
+  .outcome-card ~ .move-list-wrap {
+    display: none;
+  }
 }
 
 .outcome-card + .move-list-wrap,
 .run-status + .move-list-wrap {
-  margin-top: 15px;
+  margin-top: 6px;
 }
+
+/* the played line after a result: a little smaller, it's history now */
+.outcome-card ~ .move-list-wrap .move-list li {
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+/* ---------- Wide layout: board on the left, controls beside it ----------
+   Chosen when the board ends up bigger beside the controls than above them, which is
+   roughly when the screen is wider than it is tall by ~80px. */
+
+@container puzzle (min-aspect-ratio: 5/4) or ((min-aspect-ratio: 9/8) and (min-height: 300px)) or ((min-aspect-ratio: 27/25) and (min-height: 700px)) {
+  .game-layout {
+    --board-column: min(1100px, max(240px, 100cqh - 2 * var(--label-height)), 100cqw - var(--panel-min) - var(--layout-gap));
+    grid-template-areas:
+      "board heading"
+      "board panel";
+    grid-template-columns: var(--board-column) minmax(var(--panel-min), 430px);
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-content: center;
+    gap: clamp(10px, 2.4cqh, 20px) var(--layout-gap);
+  }
+
+  .board-column {
+    align-items: flex-start;
+  }
+
+  .puzzle-heading {
+    display: block;
+  }
+
+  .puzzle-heading .back-button {
+    width: auto;
+    height: auto;
+    min-height: 36px;
+    margin-bottom: clamp(4px, 2cqh, 18px);
+    padding: 4px 0;
+    border: 0;
+    border-radius: 0;
+    color: #687365;
+    background: transparent;
+    font-size: 0.81rem;
+  }
+
+  .puzzle-heading .back-label {
+    display: inline;
+  }
+
+  .puzzle-heading h1 {
+    font-size: clamp(1.25rem, 2.6cqh, 2rem);
+    letter-spacing: -0.055em;
+    white-space: normal;
+  }
+
+  .puzzle-heading .par-line {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    white-space: normal;
+  }
+
+  .puzzle-heading .par-chip {
+    display: inline-flex;
+    padding: 3px 9px;
+    border: 1px solid #cfdcc5;
+    background: var(--green-pale);
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+  }
+
+  .puzzle-heading .par-chip.is-attempts {
+    border-color: var(--surface-border);
+    background: var(--surface-soft);
+  }
+
+  .puzzle-heading .par-chip.is-perfect {
+    border-color: var(--gold-border);
+    background: var(--gold-pale);
+  }
+
+  .puzzle-heading .par-chip + .par-chip::before {
+    content: none;
+  }
+
+  .control-panel {
+    align-self: stretch;
+    padding: clamp(12px, 2.4cqh, 20px);
+    overflow: hidden;
+  }
+
+  .panel-top {
+    align-items: flex-start;
+    margin-bottom: 0;
+  }
+
+  .panel-top,
+  .control-panel:has(.outcome-card) .panel-top,
+  .control-panel:has(.run-status) .panel-top {
+    display: flex;
+  }
+
+  .panel-top .eyebrow,
+  .panel-copy,
+  .panel-footnote {
+    display: block;
+  }
+
+  .panel-top h2 {
+    font-size: 1.2rem;
+  }
+
+  .move-count {
+    margin-top: 4px;
+  }
+
+  /* the move list grows into the panel's free space and scrolls if the line is long */
+  .move-list-wrap {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 52px;
+    display: block;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 11px;
+    scrollbar-width: thin;
+    touch-action: pan-y;
+  }
+
+  .move-list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .move-list li {
+    gap: 11px;
+    padding: 8px 9px;
+  }
+
+  .outcome-card ~ .move-list-wrap {
+    display: block;
+  }
+
+  .outcome-card ~ .move-list-wrap .move-list {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .planning-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 15px;
+  }
+
+  .undo-label {
+    display: inline;
+  }
+
+  .undo-short-label {
+    display: none;
+  }
+
+  .inline-error,
+  .run-status {
+    margin: 12px 0 0;
+  }
+
+  .outcome-card,
+  .outcome-card:not(.is-error) {
+    display: block;
+    margin-top: 15px;
+    padding: 14px;
+  }
+
+  .outcome-card:not(.is-error) > .outcome-actions {
+    margin-top: 13px;
+  }
+
+  .outcome-card .eyebrow {
+    display: block;
+  }
+
+  .outcome-card h3 {
+    margin-bottom: 6px;
+    font-size: 1.28rem;
+  }
+
+  .outcome-card > p:not(.eyebrow) {
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  .outcome-actions {
+    gap: 7px;
+    margin-top: 13px;
+  }
+
+  .outcome-actions > .primary-button,
+  .outcome-actions > .secondary-button {
+    flex-basis: 40%;
+  }
+
+  .outcome-actions > .text-button {
+    flex-basis: 100%;
+  }
+
+  .outcome-card + .move-list-wrap,
+  .run-status + .move-list-wrap {
+    margin-top: 15px;
+  }
+
+  /* the board drops its labels when this short (see the board query above) */
+  @container puzzle (max-height: 440px) {
+    .game-layout {
+      --label-height: 0px;
+    }
+  }
+
+  /* short wide screens (phones on their side): keep the side column lean */
+  @container puzzle (max-height: 560px) {
+    .game-layout {
+      --panel-min: 220px;
+    }
+
+    .puzzle-heading {
+      display: grid;
+    }
+
+    .puzzle-heading .back-button {
+      width: 40px;
+      height: 40px;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--surface-border);
+      border-radius: 50%;
+      color: #45523e;
+      background: rgba(255, 255, 255, 0.8);
+      font-size: 1.05rem;
+    }
+
+    .puzzle-heading .back-label {
+      display: none;
+    }
+
+    .puzzle-heading h1 {
+      font-size: 1.05rem;
+      white-space: nowrap;
+    }
+
+    .puzzle-heading .par-line {
+      display: block;
+      margin: 0;
+      white-space: nowrap;
+    }
+
+    .puzzle-heading .par-chip,
+    .puzzle-heading .par-chip.is-attempts,
+    .puzzle-heading .par-chip.is-perfect {
+      display: inline;
+      padding: 0;
+      border: 0;
+      background: none;
+      font-size: inherit;
+      letter-spacing: 0;
+    }
+
+    .puzzle-heading .par-chip + .par-chip::before {
+      content: " · ";
+    }
+
+    .control-panel {
+      padding: 8px;
+    }
+
+    .panel-top {
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .panel-top .eyebrow,
+    .panel-copy,
+    .panel-footnote,
+    .outcome-card .eyebrow,
+    .control-panel:has(.outcome-card) .panel-top,
+    .control-panel:has(.run-status) .panel-top {
+      display: none;
+    }
+
+    .panel-top h2 {
+      font-size: 0.9rem;
+    }
+
+    .move-count {
+      margin: 0;
+    }
+
+    .move-list-wrap {
+      min-height: 40px;
+      padding: 5px;
+    }
+
+    .move-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .move-list li {
+      gap: 5px;
+      padding: 4px 7px;
+    }
+
+    .planning-actions {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .undo-label {
+      display: none;
+    }
+
+    .undo-short-label {
+      display: inline;
+    }
+
+    .inline-error,
+    .run-status {
+      margin: 4px 0;
+    }
+
+    .outcome-card,
+    .outcome-card:not(.is-error) {
+      margin: 0;
+      padding: 9px;
+    }
+
+    .outcome-card:not(.is-error) > .outcome-actions {
+      margin-top: 6px;
+    }
+
+    .outcome-card h3 {
+      margin-bottom: 2px;
+      font-size: 1rem;
+    }
+
+    .outcome-card > p:not(.eyebrow) {
+      font-size: 0.72rem;
+      line-height: 1.3;
+    }
+
+    .outcome-actions {
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .outcome-actions > .primary-button,
+    .outcome-actions > .secondary-button,
+    .outcome-actions > .text-button {
+      flex-basis: 0;
+    }
+
+    .outcome-actions button {
+      min-height: 40px;
+      padding: 4px 8px;
+    }
+
+    .outcome-card + .move-list-wrap,
+    .run-status + .move-list-wrap {
+      margin-top: 6px;
+    }
+  }
+}
+
+/* portrait phones: the board is limited by the width, so its frame stays thin */
+@container puzzle (max-width: 520px) {
+  .puzzle-screen,
+  .game-layout {
+    --frame-pad: 5px;
+  }
+
+  .board-frame {
+    border-radius: 10px;
+  }
+}
+
+/* tall phones have height to spare under the board: use it for the instructions */
+@container puzzle (max-aspect-ratio: 11/20) {
+  .control-panel:not(:has(.outcome-card, .run-status)) .panel-copy {
+    display: block;
+    min-height: 0;
+    margin: 0 0 8px;
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
+}
+
+/* the narrowest screens (folded phones) */
+@container puzzle (max-width: 330px) {
+  .puzzle-heading {
+    column-gap: 7px;
+  }
+
+  .submit-label {
+    display: none;
+  }
+
+  .submit-short-label {
+    display: inline;
+  }
+
+  .outcome-actions button {
+    padding: 4px 8px;
+  }
+}
+
+/* ---------- Promotion picker ---------- */
 
 .modal-backdrop {
   position: fixed;
@@ -821,22 +1491,30 @@ p {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgba(29, 37, 26, 0.42);
   backdrop-filter: blur(4px);
+  animation: backdrop-in 160ms ease-out both;
 }
 
 .promotion-modal {
   width: min(390px, 100%);
-  padding: 23px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: clamp(14px, 4vh, 23px);
   border: 1px solid #d9e0d4;
-  border-radius: 12px;
+  border-radius: 16px;
   background: #fff;
   box-shadow: 0 18px 50px rgba(32, 43, 27, 0.2);
+  animation: outcome-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
 }
 
 .promotion-modal h2 {
-  margin: 0 0 18px;
+  margin: 0 0 clamp(10px, 3vh, 18px);
   font-size: 1.4rem;
 }
 
@@ -847,14 +1525,14 @@ p {
 }
 
 .promotion-choice {
-  min-height: 88px;
+  min-height: clamp(64px, 14vh, 88px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
   border: 1px solid #dce2d7;
-  border-radius: 7px;
+  border-radius: 9px;
   color: #53604b;
   background: #f7f8f5;
   font-size: 0.68rem;
@@ -862,9 +1540,15 @@ p {
   cursor: pointer;
 }
 
-.promotion-choice:hover {
-  border-color: #9bb38b;
-  background: #eff5e9;
+.promotion-choice:active {
+  background: #eaf1e3;
+}
+
+@media (hover: hover) {
+  .promotion-choice:hover {
+    border-color: #9bb38b;
+    background: #eff5e9;
+  }
 }
 
 .promotion-choice .piece {
@@ -880,357 +1564,6 @@ p {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@media (max-width: 700px), (max-height: 450px) {
-  .game-layout {
-    height: auto;
-    grid-template-areas:
-      "heading"
-      "board"
-      "panel";
-    grid-template-columns: minmax(0, 850px);
-    grid-template-rows: auto;
-  }
-
-  .control-panel {
-    width: 100%;
-    height: auto;
-    min-height: 0;
-    overflow-y: visible;
-  }
-
-  .move-list-wrap {
-    flex: none;
-    min-height: 136px;
-  }
-}
-
-@media (max-width: 540px) {
-  .topbar,
-  .puzzle-screen {
-    width: calc(100% - 28px);
-  }
-
-  .topbar {
-    height: 64px;
-  }
-
-  .puzzle-screen {
-    padding-top: 20px;
-  }
-
-  .board-frame {
-    padding: 7px;
-    border-radius: 9px;
-  }
-
-  .board-player-label {
-    padding: 1px 3px 7px;
-  }
-
-  .board-bottom-label {
-    padding: 7px 3px 1px;
-  }
-
-  .control-panel {
-    padding: 16px;
-  }
-
-  .app-footer {
-    margin-top: 40px;
-  }
-}
-
-@media (max-width: 700px), (max-height: 700px) {
-  body {
-    min-height: 0;
-  }
-
-  #app {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-
-  .topbar {
-    width: calc(100% - 24px);
-    height: 48px;
-    flex: none;
-  }
-
-  .setup-screen,
-  .puzzle-screen {
-    min-height: 0;
-    flex: 1 1 auto;
-  }
-
-  .setup-screen {
-    padding: 12px 0;
-  }
-
-  .setup-emblem {
-    width: 48px;
-    height: 48px;
-    margin-bottom: 12px;
-    font-size: 1.7rem;
-  }
-
-  .setup-screen h1 {
-    font-size: clamp(1.5rem, 6vw, 2rem);
-  }
-
-  .setup-copy {
-    margin-bottom: 12px;
-    font-size: 0.85rem;
-    line-height: 1.4;
-  }
-
-  .setup-footnote {
-    margin-top: 10px;
-  }
-
-  .app-footer {
-    margin-top: 20px;
-  }
-
-  .puzzle-screen {
-    width: calc(100% - 24px);
-    padding: 8px 0;
-  }
-
-  .game-layout {
-    height: 100%;
-    grid-template-areas:
-      "heading"
-      "board"
-      "panel";
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    gap: 8px;
-  }
-
-  .puzzle-heading {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .puzzle-heading .eyebrow {
-    display: none;
-  }
-
-  .puzzle-heading h1 {
-    font-size: 1.1rem;
-    line-height: 1.2;
-  }
-
-  .back-button {
-    flex: none;
-    margin: 0;
-  }
-
-  .board-column {
-    height: 100%;
-    min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    container-type: size;
-  }
-
-  .board-frame {
-    width: min(100%, max(0px, calc(100cqh - 48px)));
-    margin: 0;
-    padding: 7px;
-  }
-
-  .board-player-label {
-    padding: 1px 3px 5px;
-  }
-
-  .board-bottom-label {
-    padding: 5px 3px 1px;
-  }
-
-  .control-panel {
-    height: auto;
-    min-height: 0;
-    max-height: none;
-    padding: 8px;
-    overflow: visible;
-  }
-
-  .panel-top {
-    align-items: center;
-    margin-bottom: 5px;
-  }
-
-  .panel-top .eyebrow,
-  .panel-copy,
-  .panel-footnote,
-  .control-panel:has(.outcome-card) .panel-top,
-  .control-panel:has(.run-status) .panel-top {
-    display: none;
-  }
-
-  .panel-top h2 {
-    font-size: 0.9rem;
-  }
-
-  .move-count {
-    margin: 0;
-  }
-
-  .move-list-wrap {
-    height: 40px;
-    min-height: 40px;
-    max-height: none;
-    flex: none;
-    display: flex;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 4px;
-    scrollbar-width: none;
-  }
-
-  .move-list-wrap::-webkit-scrollbar {
-    display: none;
-  }
-
-  .move-list,
-  .outcome-card ~ .move-list-wrap .move-list {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 5px;
-  }
-
-  .move-list li,
-  .outcome-card ~ .move-list-wrap .move-list li {
-    flex: none;
-    gap: 5px;
-    padding: 5px 7px;
-    white-space: nowrap;
-  }
-
-  .planning-actions {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    margin-top: 6px;
-  }
-
-  .undo-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  .undo-short-label {
-    display: inline;
-  }
-
-  .planning-actions button,
-  .outcome-actions button {
-    min-height: 42px;
-    padding: 6px 9px;
-  }
-
-  .inline-error,
-  .run-status {
-    margin: 4px 0;
-  }
-
-  .outcome-card {
-    margin: 0;
-    padding: 8px;
-  }
-
-  .outcome-card .eyebrow {
-    display: none;
-  }
-
-  .outcome-card h3 {
-    margin-bottom: 2px;
-    font-size: 1rem;
-  }
-
-  .outcome-card > p:not(.eyebrow) {
-    font-size: 0.72rem;
-    line-height: 1.3;
-  }
-
-  .outcome-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-    margin-top: 6px;
-  }
-
-  .outcome-actions .text-button {
-    grid-column: auto;
-  }
-
-  .outcome-card + .move-list-wrap,
-  .run-status + .move-list-wrap {
-    margin-top: 6px;
-  }
-}
-
-@media (max-height: 700px) and (orientation: landscape), (max-height: 420px) {
-  .game-layout {
-    grid-template-areas:
-      "board heading"
-      "board panel";
-    grid-template-columns: minmax(0, 1fr) minmax(230px, 0.9fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .board-column {
-    align-self: stretch;
-  }
-
-  .unlock-note,
-  .app-footer,
-  .setup-emblem,
-  .setup-footnote {
-    display: none;
-  }
-
-}
-
-@media (max-width: 479px) and (max-height: 420px) {
-  .game-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr);
-  }
-
-  .puzzle-screen {
-    padding: 4px 0;
-  }
-
-  .submit-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  .submit-short-label {
-    display: inline;
-  }
-
-  .outcome-actions button {
-    gap: 0;
-    padding: 2px;
-    font-size: 0.6rem;
-    overflow-wrap: anywhere;
   }
 }
 
