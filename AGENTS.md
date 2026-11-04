@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the sound-effects PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects, and 56 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the sound-effects PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, and 62 passing tests.
 
 ---
 
@@ -60,6 +60,7 @@ src/
     generated/premove-engine.sources.sha256 fingerprint of the C++ it was built from
   effects/confetti.js     dependency-free canvas confetti: burst(), cannons(), PALETTES
   effects/sound.js        synthesized sound effects (Web Audio, no audio files): createSoundPlayer, synthesize, soundForMove
+  effects/music.js        synthesized background music: the theme, 5 world arrangements, layers per screen, createMusicPlayer
   assets/pieces/*.png     Neo piece images (fall back to Unicode glyphs if missing)
 test/                     node:test suites (see §7)
 scripts/wasm-stamp.mjs    write/check the WASM source fingerprint
@@ -209,7 +210,18 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 - **Output stage:** a WaveShaper soft-clipper (linear to 0.6, rounded above), *not* a DynamicsCompressor: Chrome's compressor cut every short "thock" transient by ~9 dB even with a −3 dB threshold. Noise comes from a deterministic integer LCG; a float LCG degraded into flat runs that filters turned into clicks.
 - **Levels** (offline renders, peak dBFS): board sounds −3 to −6, results −6 to −16 (losses quietest), map cues −4 to −22, UI ticks −14 to −25. Nothing clips; overlapping cues are caught by the soft-clipper.
 - **Development:** the world map links to a **sound board** that plays every sound (and the opponent variants). Every play is also logged to `window.__soundLog` (`{name, when, opponent, muted, at}`) for headless tests. Both are dev-only and stripped from production builds.
-- To tune a sound, edit its `case` in `synthesize()` and audition it on the sound board. `test/sound.test.js` runs every sound against a fake AudioContext (finite times, everything stops within 2.5 s, everything fades out).
+- To tune a sound, edit its `case` in `synthesize()` and audition it on the sound board.
+
+### 4.9 Background music (`effects/music.js`)
+
+- **One original theme, five arrangements** (the Super Mario World approach: the same melody everywhere, re-orchestrated per area). The song is written in **scale degrees**, so each world's key and mode recolour the same tune (`ARRANGEMENTS`): meadow C major, steel-drum lead, 112 bpm; forest D major, flute, brushes, 100; desert E♭ mixolydian, banjo-ish pluck, hand claps, 106; frost F major, celesta an octave up, 96; volcano A minor (harmonic-minor V), square lead, 118. Light swing everywhere, an oom-pah bass with walk-ups and an off-beat chop (Kondo's "syncopated melody over a bouncing pulse").
+- **Form** (`FORM`): intro, A, A′, B, A′, C (breakdown: no melody, bell fragments over bongos and a walking bass), B, A′, tag = 62 bars, 2:06–2:35 depending on tempo. The second pass varies (last A′ an octave up, a harmony line a third below, extra bell counter-melody, fills). After two passes it **rests for 8 bars** of silence, then starts again (`barAt(n)`); per-bar variation is seeded, so it's deterministic.
+- **Layers follow the screen** (`SCENES`, vertical layering like Yoshi's bongos; same tempo and key): `map` = full band; `planning` = no melody or kick, softer bass and chop, a pad, the whole band −3 dB (calmer, for thinking); `playing` (a line is being played out) = bongos and kick back in; a won result goes back to `map`, a failed one to `planning`. A layer that turns on comes in at the next bar line. `main.js` picks the target in `musicTarget()` at the end of every `render()`: the world being played; on the world map, the world you're up to.
+- **Changing world** restarts the tune from the top in the new arrangement, like entering a Mario level. Changing scene never restarts.
+- **Mix:** `MUSIC_GAIN` puts the maps at ≈ −32 dB RMS vs ≈ −21 for a piece move (≈10 dB under), planning ≈ −37. The music bus is band-limited (low-pass 4.8 kHz, high-pass 55 Hz) and **ducks** under fanfares (`DUCKS`: win, perfect, poppers, mate, defeat, flag, stamp, unlock-world), via the sound player's `onPlay`.
+- **Plumbing:** effects and music share one AudioContext and soft-clipper (`sounds.audio()` gives `{ context, musicInput }`; `keepAwake` stops an effects mute from suspending the context while music plays). Music starts on the **first pointerdown/keydown** (browsers forbid audio before a gesture), stops while the tab is hidden, and has its own on/off button (the ♫ next to the speaker), remembered in `chess-premove-music-v1`. There's no keyboard shortcut for it (M stays effects only).
+- **Scheduling:** a 100 ms interval keeps ≥0.6 s scheduled, a whole bar at a time (`scheduleRange`, also used for offline renders). Each run has its own layer gains, so stopping or switching fades out exactly what was scheduled. About 20 audio sources/s.
+- **Development:** the sound board has world and scene buttons to audition every arrangement and layer; `window.__music` (`state()`, `isPlaying()`) is exposed for headless tests. Both are dev-only. `test/sound.test.js` runs every sound against a fake AudioContext (finite times, everything stops within 2.5 s, everything fades out).
 
 ---
 
@@ -256,13 +268,14 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 56 tests in 9 files, about 25 s.
+- `npm test`: 62 tests in 10 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
   - `stages`: the 5×5 layout in `stages.json`
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
+  - `music`: form length and shape, second-pass variation and rests, modes, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
@@ -273,7 +286,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Click squares via `button[data-square="e2"]`.
   - Submit with `[data-action="submit"]` and wait for `.outcome-card`.
   - Collect `pageerror` and console errors.
-  - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes.
+  - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes. For music, render bars with `scheduleRange` into an `OfflineAudioContext` (through the same low-pass/high-pass chain), measure levels per scene against the effects, encode MP3s with `ffmpeg` and send them to the owner; on the dev server, `window.__music.state()` gives `{ world, scene, bar, … }`.
   - Take screenshots and look at them.
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
@@ -301,6 +314,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - No Stockfish in the game. The opponent is the WASM refuter.
 - The site must stay fully static (GitHub Pages). There is no backend.
 - Sound effects are on by default, synthesized (no audio files), mutable from the top bar or with M. Wins never get a sad sound; losses get a gentle two-note cue.
+- Background music is on by default, original (not a Mario melody), synthesized, quieter than the effects, with its own on/off button.
 
 ---
 

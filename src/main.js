@@ -1,4 +1,5 @@
 import { burst, cannons, PALETTES } from "./effects/confetti.js";
+import { ARRANGEMENTS, createMusicPlayer, SCENES } from "./effects/music.js";
 import { createSoundPlayer, SOUND_NAMES, soundForMove } from "./effects/sound.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import {
@@ -14,12 +15,24 @@ import "./style.css";
 import "./ui/worlds.css";
 
 const app = document.querySelector("#app");
-// In development, every sound is also logged to window.__soundLog for headless tests.
-const sounds = createSoundPlayer(import.meta.env.DEV ? {
+// Effects and music share one AudioContext; the music ducks under fanfares. In development
+// every sound is also logged to window.__soundLog for headless tests.
+let music = null;
+const sounds = createSoundPlayer({
   onPlay(name, details) {
-    (window.__soundLog ??= []).push({ name, at: Math.round(performance.now()), ...details });
+    if (!details.muted) {
+      music?.duck(name);
+    }
+    if (import.meta.env.DEV) {
+      (window.__soundLog ??= []).push({ name, at: Math.round(performance.now()), ...details });
+    }
   },
-} : undefined);
+  keepAwake: () => Boolean(music?.isPlaying()),
+});
+music = createMusicPlayer({ audio: sounds.audio });
+if (import.meta.env.DEV) {
+  window.__music = music; // for headless tests: state(), isPlaying()
+}
 const files = "abcdefgh";
 const pieceSymbols = {
   w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -50,6 +63,7 @@ const state = {
   // unlockedLevel/hopFrom (stage map), clearedStage (stage map), unlockedStage (world map).
   fresh: { unlockedLevel: null, hopFrom: null, clearedStage: null, unlockedStage: null },
   transitioning: false,
+  musicPreview: null, // development sound board: { world, scene } to audition
   puzzle: null,
   session: null,
   snapshot: null,
@@ -96,6 +110,7 @@ function renderHeader() {
       </button>
       <span class="topbar-status">
         ${showStars ? `<span class="star-counter ${stars ? "has-stars" : ""}" title="Perfect solves" aria-label="${stars} of ${LEVELS.length} levels perfected"><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small></span>` : ""}
+        ${renderMusicToggle()}
         ${renderSoundToggle()}
         <span class="engine-pill ${state.engine ? "is-ready" : ""}">
           <span class="status-dot"></span>${engineStatus}
@@ -111,9 +126,55 @@ function renderSoundToggle() {
   const waves = muted
     ? '<path d="M15.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
     : '<path d="M15.2 9.2a4 4 0 0 1 0 5.6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
-  return `<button class="sound-toggle ${muted ? "is-muted" : ""}" type="button" data-action="toggle-sound" aria-pressed="${!muted}" aria-label="Sound effects" title="${muted ? "Sound off" : "Sound on"} (M)">
+  return `<button class="icon-toggle sound-toggle ${muted ? "is-muted" : ""}" type="button" data-action="toggle-sound" aria-pressed="${!muted}" aria-label="Sound effects" title="${muted ? "Sound off" : "Sound on"} (M)">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${SPEAKER}${waves}</svg>
   </button>`;
+}
+
+const NOTE_ICON = '<path d="M9 17.5V6.5l10-2v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.6" cy="17.6" r="2.6" fill="currentColor"/><circle cx="16.6" cy="15.6" r="2.6" fill="currentColor"/>';
+function renderMusicToggle() {
+  const muted = music.isMuted();
+  const slash = muted ? '<path d="M4 4l16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' : "";
+  return `<button class="icon-toggle music-toggle ${muted ? "is-muted" : ""}" type="button" data-action="toggle-music" aria-pressed="${!muted}" aria-label="Music" title="Music ${muted ? "off" : "on"}">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${NOTE_ICON}${slash}</svg>
+  </button>`;
+}
+
+function toggleMusic() {
+  music.start(); // in case this click is the first gesture
+  const muted = music.toggleMuted();
+  const toggle = app.querySelector(".music-toggle");
+  if (toggle) {
+    toggle.outerHTML = renderMusicToggle();
+  }
+  if (muted && sounds.isMuted()) {
+    sounds.setMuted(true); // nothing left to play: let the AudioContext sleep
+  }
+  sounds.play("click");
+}
+
+// Which arrangement and layers the music plays: the world being played (on the world map,
+// the world you're up to), full band on maps, a thinking texture while planning, bongos
+// while a line plays out.
+function musicTarget() {
+  if (state.screen === "sounds" && state.musicPreview) {
+    return state.musicPreview;
+  }
+  let world = "meadow";
+  if ((state.screen === "stage" || state.screen === "puzzle") && state.stage) {
+    world = state.stage.theme;
+  } else if (state.progressStore) {
+    const next = currentLevel();
+    world = next ? getStage(next.stageId).theme : STAGES.at(-1).theme;
+  }
+  let scene = "map";
+  if (state.screen === "puzzle" && state.snapshot) {
+    const { phase, outcome } = state.snapshot;
+    scene = phase === "planning" ? "planning"
+      : phase === "playing" ? "playing"
+        : outcome === "victory" ? "map" : "planning";
+  }
+  return { world, scene };
 }
 
 // Toggled without a full re-render, so map animations in progress aren't cut short.
@@ -309,6 +370,16 @@ function renderSoundBoard() {
       <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
       <h1>Sound board</h1>
       <p class="sound-board-copy">Every effect, synthesized live by <code>src/effects/sound.js</code>. Board sounds also have an opponent variant.${sounds.isMuted() ? " Sound is muted: press M to hear them." : ""}</p>
+      <section>
+        <h2>Music</h2>
+        <p class="sound-board-copy">Each world's arrangement of the theme (<code>src/effects/music.js</code>), and the layers each screen uses. Picking a world restarts the tune.${music.isMuted() ? " Music is off: use the note button above." : ""}</p>
+        <div class="sound-board-grid">
+          ${Object.keys(ARRANGEMENTS).map((world) => `<button class="secondary-button ${state.musicPreview?.world === world ? "is-current" : ""}" type="button" data-action="music-preview" data-world="${world}">${world}</button>`).join("")}
+        </div>
+        <div class="sound-board-grid">
+          ${Object.keys(SCENES).map((scene) => `<button class="secondary-button ${state.musicPreview?.scene === scene ? "is-current" : ""}" type="button" data-action="music-preview" data-scene="${scene}">${scene}</button>`).join("")}
+        </div>
+      </section>
       ${groups.map(([title, names]) => `
         <section>
           <h2>${title}</h2>
@@ -845,6 +916,7 @@ function render() {
   if (!state.transitioning) {
     playMapEffects();
   }
+  music.update(musicTarget());
 }
 
 // Screen changes cross-fade, and a world card grows into its level map (View Transitions,
@@ -1243,6 +1315,15 @@ app.addEventListener("click", (event) => {
       navigate(() => {
         state.screen = "sounds";
       });
+    } else if (action === "toggle-music") {
+      toggleMusic();
+    } else if (action === "music-preview" && import.meta.env.DEV) {
+      const current = state.musicPreview ?? musicTarget();
+      state.musicPreview = {
+        world: actionElement.dataset.world ?? current.world,
+        scene: actionElement.dataset.scene ?? current.scene,
+      };
+      render();
     } else if (action === "play-sound") {
       sounds.play(actionElement.dataset.sound, { opponent: actionElement.dataset.opponent === "true" });
     } else if (action === "submit" && state.snapshot.phase === "planning") {
@@ -1426,5 +1507,12 @@ document.addEventListener("keydown", (event) => {
     toggleSound();
   }
 });
+
+// Browsers only allow audio after a user gesture: the first one starts the music.
+for (const type of ["pointerdown", "keydown"]) {
+  document.addEventListener(type, () => music.start(), { capture: true, once: true });
+}
+// No music in a background tab; it picks up from the top when the tab is back.
+document.addEventListener("visibilitychange", () => music.setHidden(document.hidden));
 
 void initializeApp();
