@@ -1,5 +1,8 @@
-import { PUZZLES } from "./puzzles.js";
+import { LEVELS, STAGES } from "./stages.js";
 
+// Progress is keyed by level id ("2-3"), not by puzzle, because a puzzle can appear in more
+// than one level. Saves from before stages existed hold puzzle numbers ("1"…); those entries
+// still load and are kept on save, but they match no level, so they don't count.
 const STORAGE_KEY = "chess-premove-progress-v1";
 
 export function createProgressStore(storage = globalThis.localStorage, { allowDevUnlock = false } = {}) {
@@ -7,10 +10,10 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     throw new Error("Browser storage is not available.");
   }
 
-  const puzzleIds = PUZZLES.map((puzzle) => puzzle.id);
+  const levelIds = LEVELS.map((level) => level.id);
   let completed = new Set();
   let perfected = new Set(); // solved in the minimum number of premoves
-  let attempts = {}; // puzzle id -> times a line was submitted
+  let attempts = {}; // level id -> times a line was submitted
   const devUnlocked = new Set();
   let saved;
   try {
@@ -60,23 +63,23 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
   }
 
   function isUnlocked(id) {
-    const index = puzzleIds.indexOf(String(id));
+    const index = levelIds.indexOf(String(id));
     if (index === -1) {
       return false;
     }
     return devUnlocked.has(String(id))
-      || puzzleIds.slice(0, index).every((puzzleId) => completed.has(puzzleId));
+      || levelIds.slice(0, index).every((levelId) => completed.has(levelId));
   }
 
   function unlockForDevelopment(id) {
-    const puzzleId = String(id);
+    const levelId = String(id);
     if (!allowDevUnlock) {
-      throw new Error("Development puzzle unlocking is not enabled.");
+      throw new Error("Development level unlocking is not enabled.");
     }
-    if (!puzzleIds.includes(puzzleId)) {
-      throw new RangeError(`Unknown puzzle: ${puzzleId}`);
+    if (!levelIds.includes(levelId)) {
+      throw new RangeError(`Unknown level: ${levelId}`);
     }
-    devUnlocked.add(puzzleId);
+    devUnlocked.add(levelId);
   }
 
   function isPerfected(id) {
@@ -85,20 +88,20 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
 
   /** Record a win; `perfect` if it used the minimum number of premoves. */
   function markCompleted(id, { perfect = false } = {}) {
-    const puzzleId = String(id);
-    if (!puzzleIds.includes(puzzleId)) {
-      throw new RangeError(`Unknown puzzle: ${puzzleId}`);
+    const levelId = String(id);
+    if (!levelIds.includes(levelId)) {
+      throw new RangeError(`Unknown level: ${levelId}`);
     }
-    if (!isUnlocked(puzzleId)) {
-      throw new Error(`Cannot complete locked puzzle ${puzzleId}.`);
+    if (!isUnlocked(levelId)) {
+      throw new Error(`Cannot complete locked level ${levelId}.`);
     }
-    if (completed.has(puzzleId) && (!perfect || perfected.has(puzzleId))) {
+    if (completed.has(levelId) && (!perfect || perfected.has(levelId))) {
       return;
     }
 
     save({
-      completed: new Set(completed).add(puzzleId),
-      perfected: perfect ? new Set(perfected).add(puzzleId) : perfected,
+      completed: new Set(completed).add(levelId),
+      perfected: perfect ? new Set(perfected).add(levelId) : perfected,
       attempts,
     });
   }
@@ -110,26 +113,42 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
 
   /** Count a submitted line (an attempt); returns the new total for the puzzle. */
   function recordAttempt(id) {
-    const puzzleId = String(id);
-    if (!puzzleIds.includes(puzzleId)) {
-      throw new RangeError(`Unknown puzzle: ${puzzleId}`);
+    const levelId = String(id);
+    if (!levelIds.includes(levelId)) {
+      throw new RangeError(`Unknown level: ${levelId}`);
     }
-    save({ completed, perfected, attempts: { ...attempts, [puzzleId]: attemptCount(puzzleId) + 1 } });
-    return attempts[puzzleId];
+    save({ completed, perfected, attempts: { ...attempts, [levelId]: attemptCount(levelId) + 1 } });
+    return attempts[levelId];
+  }
+
+  /** A stage opens once every level of the stage before it is completed. */
+  function isStageUnlocked(stageId) {
+    const stage = STAGES.find((candidate) => candidate.id === String(stageId));
+    if (!stage) {
+      return false;
+    }
+    return stage.levels.some((level) => isUnlocked(level.id));
+  }
+
+  function isStageCleared(stageId) {
+    const stage = STAGES.find((candidate) => candidate.id === String(stageId));
+    return Boolean(stage) && stage.levels.every((level) => completed.has(level.id));
   }
 
   function completedIds() {
-    return [...completed].filter((id) => puzzleIds.includes(id));
+    return [...completed].filter((id) => levelIds.includes(id));
   }
 
   function perfectedIds() {
-    return [...perfected].filter((id) => puzzleIds.includes(id));
+    return [...perfected].filter((id) => levelIds.includes(id));
   }
 
   return Object.freeze({
     isCompleted,
     isPerfected,
     isUnlocked,
+    isStageUnlocked,
+    isStageCleared,
     unlockForDevelopment,
     markCompleted,
     attemptCount,

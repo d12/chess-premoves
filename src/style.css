@@ -179,191 +179,9 @@ p {
   font-size: 0.74rem;
 }
 
-.index-screen {
-  width: min(1160px, calc(100% - 48px));
-  margin: 0 auto;
-}
-
-.index-screen {
-  padding: 52px 0 30px;
-}
-
-.index-hero {
-  max-width: 690px;
-  margin-bottom: 38px;
-}
-
-.index-hero h1 {
-  max-width: 680px;
-  margin: 0;
-  font-size: clamp(2rem, 3.4vw, 2.7rem);
-  font-weight: 750;
-  letter-spacing: -0.06em;
-  line-height: 1.04;
-}
-
-.index-copy {
-  max-width: 500px;
-  margin: 15px 0 0;
-  color: var(--text-muted);
-  font-size: 0.98rem;
-  line-height: 1.65;
-}
-
-.levels-section {
-  padding-top: 23px;
-  border-top: 1px solid var(--surface-border);
-}
-
-.section-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 18px;
-}
-
-.section-heading h2 {
-  margin: 0;
-  font-size: 1.42rem;
-  letter-spacing: -0.035em;
-}
-
-.completion-count {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.completion-count strong {
-  font-size: 1.12rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.completion-count strong span,
-.completion-count small {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.level-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-  gap: 12px;
-}
-
-.level-card {
-  min-height: 148px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 15px;
-  overflow: hidden;
-  border: 1px solid #cdd9c4;
-  border-radius: 11px;
-  color: #34432d;
-  background: linear-gradient(145deg, #f1f6ed, #e7eee1);
-  text-align: left;
-  cursor: pointer;
-  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
-}
-
-.level-card:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: #86a573;
-  background: linear-gradient(145deg, #f6f9f2, #e6efdf);
-}
-
-.level-card.is-complete {
-  border-color: #8eaa7a;
-  background: linear-gradient(145deg, #e8f1e2, #dce9d5);
-}
-
-/* Perfected: solved in the minimum number of premoves */
-.level-card.is-perfect {
-  border-color: var(--gold-border);
-  color: var(--gold-ink);
-  background: linear-gradient(145deg, #fef8e4, #f6e5ad);
-}
-
-.level-card.is-perfect:hover:not(:disabled) {
-  border-color: #c99f2a;
-  background: linear-gradient(145deg, #fffaea, #f4df9c);
-}
-
-.level-card.is-perfect .level-number {
-  color: rgba(160, 118, 8, 0.2);
-}
-
-.level-card.is-perfect .level-mark,
 .perfect-star,
 .perfect-count {
   color: var(--gold);
-}
-
-.level-card.is-perfect .level-status {
-  color: #8a6a12;
-}
-
-.level-card.is-locked,
-.level-card:disabled {
-  border-color: #e0e3dd;
-  color: #777e72;
-  background: #eff1ed;
-  cursor: not-allowed;
-}
-
-.level-card.is-locked:not(:disabled) {
-  cursor: pointer;
-}
-
-.level-number {
-  position: absolute;
-  top: 7px;
-  left: 12px;
-  color: rgba(69, 98, 54, 0.12);
-  font-size: 4.3rem;
-  font-weight: 800;
-  letter-spacing: -0.1em;
-  line-height: 1;
-}
-
-.level-mark {
-  position: absolute;
-  top: 13px;
-  right: 14px;
-  color: var(--green);
-  font-size: 0.95rem;
-}
-
-.is-locked .level-mark {
-  color: #9ca398;
-}
-
-.level-title,
-.level-status {
-  position: relative;
-  z-index: 1;
-}
-
-.level-title {
-  margin-bottom: 4px;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-}
-
-.level-status {
-  color: #5c6e51;
-  font-size: 0.76rem;
-}
-
-.is-locked .level-status {
-  color: #777e72;
 }
 
 .unlock-note,
@@ -1094,39 +912,12 @@ p {
 
 @media (max-width: 540px) {
   .topbar,
-  .index-screen,
   .puzzle-screen {
     width: calc(100% - 28px);
   }
 
   .topbar {
     height: 64px;
-  }
-
-  .index-screen {
-    padding-top: 40px;
-  }
-
-  .index-hero {
-    margin-bottom: 32px;
-  }
-
-  .index-hero h1 {
-    font-size: clamp(1.9rem, 8vw, 2.25rem);
-  }
-
-  .index-copy {
-    font-size: 0.9rem;
-  }
-
-  .level-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 9px;
-  }
-
-  .level-card {
-    min-height: 132px;
-    padding: 12px;
   }
 
   .puzzle-screen {
@@ -1175,7 +966,6 @@ p {
   }
 
   .setup-screen,
-  .index-screen,
   .puzzle-screen {
     min-height: 0;
     flex: 1 1 auto;
@@ -1204,70 +994,6 @@ p {
 
   .setup-footnote {
     margin-top: 10px;
-  }
-
-  .index-screen {
-    width: calc(100% - 24px);
-    padding: 16px 0;
-  }
-
-  .index-hero {
-    margin-bottom: 20px;
-  }
-
-  .index-hero h1 {
-    font-size: clamp(1.6rem, 6vw, 2rem);
-  }
-
-  .index-copy {
-    margin-top: 8px;
-    font-size: 0.85rem;
-    line-height: 1.4;
-  }
-
-  .levels-section {
-    padding-top: 14px;
-  }
-
-  .section-heading {
-    margin-bottom: 12px;
-  }
-
-  /* Compact tiles that wrap, so 20-30 levels stay visible and in order on small screens */
-  .level-grid {
-    grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
-    gap: 8px;
-    padding: 2px;
-  }
-
-  .level-card {
-    min-height: 0;
-    aspect-ratio: 1;
-    padding: 6px;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .level-number {
-    position: static;
-    color: inherit;
-    font-size: 1.3rem;
-    letter-spacing: -0.04em;
-  }
-
-  .level-mark {
-    top: 5px;
-    right: 7px;
-    font-size: 0.7rem;
-  }
-
-  .level-title,
-  .level-status {
-    display: none;
-  }
-
-  .level-card.is-perfect .level-number {
-    color: var(--gold-ink);
   }
 
   .app-footer {
@@ -1473,12 +1199,6 @@ p {
     align-self: stretch;
   }
 
-  .index-hero {
-    margin-bottom: 10px;
-  }
-
-  .index-copy,
-  .index-hero .eyebrow,
   .unlock-note,
   .app-footer,
   .setup-emblem,
@@ -1486,9 +1206,6 @@ p {
     display: none;
   }
 
-  .index-hero h1 {
-    font-size: 1.4rem;
-  }
 }
 
 @media (max-width: 479px) and (max-height: 420px) {
