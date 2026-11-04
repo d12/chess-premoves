@@ -1285,3 +1285,92 @@
     width: 58px;
   }
 }
+
+/* ---------- Sound toggle and the development sound board ---------- */
+
+.sound-toggle {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d8dfd2;
+  border-radius: 999px;
+  color: #4a653d;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.sound-toggle:hover {
+  background: #fff;
+}
+
+.sound-toggle svg {
+  width: 19px;
+  height: 19px;
+}
+
+.sound-toggle.is-muted {
+  color: #8b9386;
+}
+
+.dev-link {
+  min-height: 0;
+  padding: 0 2px;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.sound-board {
+  width: min(900px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+
+.sound-board h1 {
+  margin: 8px 0;
+  font-family: "Lilita One", Inter, sans-serif;
+  font-size: 2.4rem;
+  font-weight: 400;
+}
+
+.sound-board h2 {
+  margin: 24px 0 10px;
+  font-size: 1rem;
+}
+
+.sound-board-copy {
+  color: var(--text-muted);
+}
+
+.sound-board-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sound-board-grid .is-opponent {
+  color: var(--text-muted);
+}
+
+@media (max-width: 700px), (max-height: 700px) {
+  .sound-board {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+  }
+}
+
+/* very narrow phones: the engine status collapses to its dot to make room for the sound toggle */
+@media (max-width: 400px) {
+  .engine-pill {
+    gap: 0;
+    padding: 9px;
+    font-size: 0;
+  }
+
+  .topbar-status {
+    gap: 6px;
+  }
+}
