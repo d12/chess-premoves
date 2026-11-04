@@ -10,7 +10,7 @@ export const SOUND_NAMES = Object.freeze([
   "premove", "undo", "illegal", "submit",
   "move", "capture", "check", "castle", "promote", "mate",
   // results
-  "win", "perfect", "poppers", "defeat", "draw",
+  "win", "perfect", "poppers", "defeat",
   // menus and maps
   "click", "open", "back", "lock", "pop", "trail", "hop", "flag", "stamp", "unlock-world",
 ]);
@@ -219,10 +219,6 @@ export function synthesize(context, destination, name, at, { opponent = false } 
     case "defeat": // gentle, not sad: two soft notes stepping down
       marimba(NOTE.G4, 0, 0.17, 0.4);
       marimba(NOTE.D4, 0.15, 0.15, 0.55);
-      break;
-    case "draw":
-      marimba(NOTE.E5, 0, 0.15, 0.35);
-      marimba(NOTE.E5, 0.15, 0.13, 0.45);
       break;
 
     // ---- menus and maps ----

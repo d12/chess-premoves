@@ -70,10 +70,11 @@ test("planning continues past a preview that only looks like checkmate", async (
 
 test("a premove may target the square the opponent king stands on now", async () => {
   const cases = [
-    { fen: EXAMPLE.fen, playerColor: "w", check: ["e1", "c1"], king: "c6", reply: "c6b7" },
-    { fen: "4r2k/3q4/8/8/8/2K5/8/8 b - - 0 1", playerColor: "b", check: ["e8", "c8"], king: "c3", reply: "c3b3" },
+    { fen: EXAMPLE.fen, playerColor: "w", check: ["e1", "c1"], king: "c6", replies: ["c6b7"], ending: /ended before checkmate/ },
+    // here the last premove (Rc3+) is check, so the king's escape is played out too
+    { fen: "4r2k/3q4/8/8/8/2K5/8/8 b - - 0 1", playerColor: "b", check: ["e8", "c8"], king: "c3", replies: ["c3b3", "b3b4"], ending: /way out/ },
   ];
-  for (const { fen, playerColor, check, king, reply } of cases) {
+  for (const { fen, playerColor, check, king, replies, ending } of cases) {
     const game = createPremoveGame({ fen }, { playerColor });
     game.queueMove({ from: check[0], to: check[1] });
     assert.ok(game.legalMovesFrom(check[1]).some((move) => move.to === king));
@@ -82,9 +83,10 @@ test("a premove may target the square the opponent king stands on now", async ()
     assert.equal(pieceAt(queued.fen, king).type, "r");
 
     // the check forces the king away, so the premove is legal when it is played
-    const result = await game.play({ async bestMove() { return reply; } }, { delayMs: 0 });
+    const result = await game.play({ async bestMove() { return replies.shift(); } }, { delayMs: 0 });
     assert.equal(new Chess(result.fen).get(king)?.type, "r");
-    assert.match(result.message, /ended before checkmate/);
+    assert.match(result.message, ending);
+    assert.equal(replies.length, 0);
   }
 });
 
@@ -255,4 +257,56 @@ test("a defeat is never perfect", async () => {
   const result = await game.play({ async bestMove() { return replies[i++]; } }, { delayMs: 0 });
   assert.equal(result.outcome, "defeat");
   assert.equal(result.perfect, false);
+});
+
+test("a last premove that only gives check lets the opponent play its escape before the defeat", async () => {
+  // Rc1+ Kb7, then Qg2+ is check but not mate: the king steps to b8
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2g2"]);
+  const replies = ["c6b7", "b7b8"];
+  const updates = [];
+  const result = await game.play({ async bestMove() { return replies.shift(); } }, {
+    delayMs: 0,
+    onUpdate(snapshot) { updates.push(snapshot); },
+  });
+  assert.equal(replies.length, 0, "the opponent was asked for its escape");
+  assert.equal(result.outcome, "defeat");
+  assert.match(result.message, /gave check, but not checkmate/);
+  assert.deepEqual(result.lastMove, { from: "b7", to: "b8", san: "Kb8", color: "b" });
+  // the escape is published as its own update, before the result
+  const escape = updates.findIndex((snapshot) => snapshot.lastMove?.to === "b8");
+  assert.ok(escape >= 0 && updates[escape].phase === "playing");
+  assert.equal(updates.at(-1).phase, "complete");
+});
+
+test("a last premove that doesn't give check ends at once, without another opponent move", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2d3"]);
+  let calls = 0;
+  const result = await game.play({ async bestMove() { calls += 1; return "c6b7"; } }, { delayMs: 0 });
+  assert.equal(calls, 1);
+  assert.match(result.message, /ended before checkmate/);
+});
+
+test("draws are failures with the reason named, never a separate outcome", async () => {
+  // Qb6 stalemates the lone king on a8
+  const stalemate = createPremoveGame({ fen: "k7/8/2K5/8/8/8/8/1Q6 w - - 0 1" });
+  queueAll(stalemate, ["b1b6"]);
+  const stalemated = await stalemate.play({ async bestMove() { throw new Error("not asked"); } }, { delayMs: 0 });
+  assert.equal(stalemated.outcome, "defeat");
+  assert.match(stalemated.message, /^Stalemate: Black has no legal move but isn't in check/);
+
+  // Kxb2 leaves king against king
+  const bare = createPremoveGame({ fen: "7k/8/8/8/8/8/1n6/K7 w - - 0 1" });
+  queueAll(bare, ["a1b2"]);
+  const insufficient = await bare.play({ async bestMove() { throw new Error("not asked"); } }, { delayMs: 0 });
+  assert.equal(insufficient.outcome, "defeat");
+  assert.match(insufficient.message, /Not enough pieces/);
+
+  // the opponent's reply can draw too: Kxb2 removes White's last piece
+  const taken = createPremoveGame({ fen: "8/8/8/8/8/8/1R6/k3K3 w - - 0 1" });
+  queueAll(taken, ["e1e2", "e2e3"]);
+  const drawn = await taken.play({ async bestMove() { return "a1b2"; } }, { delayMs: 0 });
+  assert.equal(drawn.outcome, "defeat");
+  assert.match(drawn.message, /Not enough pieces/);
 });

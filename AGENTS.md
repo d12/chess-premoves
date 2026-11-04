@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the sound-effects PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects, and 56 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the sound-effects PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects, and 60 passing tests.
 
 ---
 
@@ -83,10 +83,10 @@ review_queue.jsonl        stray ppz review queue committed at the repo root; see
 
 - **Planning.** Premoves are validated **geometrically only**, as on chess.com/lichess (`premoveRules.js`). Pieces in the way, an opponent piece on the target square, or the black king standing there do not block a premove, because the opponent moves in between. The planning board shows **White's pieces after the queued premoves** and Black's pieces where they stand now. Capturing onto an opponent piece removes it from the preview; the black king is only *hidden* while a white piece stands on its square (`preview.hiddenKing`). The player can click-click or drag, and promotion opens a picker. Undo removes the last premove.
 - **Playback** (`session.play`). The board switches to the real position, waits `startDelayMs` (the UI passes **500 ms**), then plays premove, opponent reply, premove, … with `delayMs` (**1000 ms**) after each move. Real legality is checked as each premove comes up.
-- **Outcomes.**
+- **Outcomes.** A level is either solved or not: there is no draw outcome (owner's rule).
   - **victory**: checkmate at any point.
-  - **defeat**: a premove became illegal, the premoves ran out without mate, or White got mated.
-  - **draw**: stalemate, insufficient material, the 50-move rule or threefold repetition, using chess.js rules.
+  - **defeat**: a premove became illegal, the premoves ran out without mate, White got mated, or the game was drawn (stalemate, insufficient material, the 50-move rule or threefold repetition, using chess.js rules). Drawn endings say why in the message (`drawnReason`, e.g. "Stalemate: Black has no legal move but isn't in check. Only checkmate solves the level.").
+  - **Ending on a check that isn't mate:** if the last premove gives check, the opponent's escape is played out (one more `bestMove`, published like any move) before the defeat card: "Your last premove gave check, but not checkmate: the king had a way out." A last premove that doesn't give check still ends at once.
 - **Perfect.** A win using `≤ puzzle.number_of_moves` premoves (the shortest solution length). Perfect wins get their own result card and are stored separately.
 - **Attempts.** Each submit counts as one attempt for that puzzle (per player, in localStorage).
 
@@ -103,7 +103,7 @@ await game.play(engine /* { bestMove(fen) → uci } */, { delayMs, startDelayMs,
 
 `snapshot()` fields:
 - `phase`: `"planning" | "playing" | "complete" | "error"`
-- `outcome`: `"victory" | "defeat" | "draw" | null`
+- `outcome`: `"victory" | "defeat" | null`
 - `message`
 - `perfect`: set on completion
 - `minimumMoves`, `movesUsed`
@@ -203,8 +203,8 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 ### 4.8 Sound effects (`effects/sound.js`)
 
 - **Every sound is synthesized** with the Web Audio API (oscillators, filtered noise, envelopes); there are no audio files to license or load. `synthesize(context, destination, name, at, {opponent})` builds one sound; `createSoundPlayer()` wraps a lazily created `AudioContext` (made on the first sound, which always follows a click, so there are no autoplay warnings) and a mute flag stored in localStorage key `chess-premove-sound-v1` (`"on"`/`"off"`).
-- **Sounds** (`SOUND_NAMES`): board `premove`, `undo`, `illegal`, `submit`, `move`, `capture`, `check`, `castle`, `promote`, `mate`; results `win`, `perfect`, `poppers` (the perfect-solve cannons), `defeat`, `draw`; menus/maps `click`, `open`, `back`, `lock`, `pop`, `trail`, `hop`, `flag`, `stamp`, `unlock-world`. Played moves pick theirs from SAN with `soundForMove` (`#` mate, `+` check, `=` promote, `O-O` castle, `x` capture); Black's replies are pitched ~14% lower (`opponent`).
-- **Where they fire** (`main.js`): queueing/undoing/rejecting a premove; submit; each played move; the mate fanfare (`win`/`perfect`, 0.22 s after the mating move, in `celebrateMate`); `defeat`/`draw` when their result card appears (gentle two-note marimba, never a "sad trombone"); `poppers` with the gold cannons; navigation (`open` going deeper, `back` going up, `click` for other buttons); and each map effect in `playMapEffects`, scheduled with `when` to land on its animation's key frame (lock wiggle at 0, node `pop` at 0.6 s, `trail` 0.12 s, `hop` 0.26 s with the landing tap built in, `flag` 0.2 s, `stamp` 0.74 s = the stamp's impact). With reduced motion the animation-synced cues (`lock`, `trail`, `hop`, `flag`) are skipped and the rest play untimed.
+- **Sounds** (`SOUND_NAMES`): board `premove`, `undo`, `illegal`, `submit`, `move`, `capture`, `check`, `castle`, `promote`, `mate`; results `win`, `perfect`, `poppers` (the perfect-solve cannons), `defeat`; menus/maps `click`, `open`, `back`, `lock`, `pop`, `trail`, `hop`, `flag`, `stamp`, `unlock-world`. Played moves pick theirs from SAN with `soundForMove` (`#` mate, `+` check, `=` promote, `O-O` castle, `x` capture); Black's replies are pitched ~14% lower (`opponent`).
+- **Where they fire** (`main.js`): queueing/undoing/rejecting a premove; submit; each played move; the mate fanfare (`win`/`perfect`, 0.22 s after the mating move, in `celebrateMate`); `defeat` when its result card appears (gentle two-note marimba, never a "sad trombone"); `poppers` with the gold cannons; navigation (`open` going deeper, `back` going up, `click` for other buttons); and each map effect in `playMapEffects`, scheduled with `when` to land on its animation's key frame (lock wiggle at 0, node `pop` at 0.6 s, `trail` 0.12 s, `hop` 0.26 s with the landing tap built in, `flag` 0.2 s, `stamp` 0.74 s = the stamp's impact). With reduced motion the animation-synced cues (`lock`, `trail`, `hop`, `flag`) are skipped and the rest play untimed.
 - **Mute:** a speaker toggle in the top bar and the **M** key. Toggling updates the button in place (no re-render), so map animations aren't interrupted.
 - **Output stage:** a WaveShaper soft-clipper (linear to 0.6, rounded above), *not* a DynamicsCompressor: Chrome's compressor cut every short "thock" transient by ~9 dB even with a −3 dB threshold. Noise comes from a deterministic integer LCG; a float LCG degraded into flat runs that filters turned into clicks.
 - **Levels** (offline renders, peak dBFS): board sounds −3 to −6, results −6 to −16 (losses quietest), map cues −4 to −22, UI ticks −14 to −25. Nothing clips; overlapping cues are caught by the soft-clipper.
@@ -256,8 +256,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 56 tests in 9 files, about 25 s.
-  - `session`: rules, playback, `startDelay`, `matedKing`, perfect
+- `npm test`: 60 tests in 9 files, about 25 s.
+  - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
