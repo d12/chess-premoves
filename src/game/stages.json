@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1",
+    "name": "Pawn Meadows",
+    "tagline": "Every grandmaster started here.",
+    "theme": "meadow",
+    "piece": "p",
+    "puzzles": ["1", "1", "1", "1", "1"]
+  },
+  {
+    "id": "2",
+    "name": "Knight's Wood",
+    "tagline": "Paths twist between the pines.",
+    "theme": "forest",
+    "piece": "n",
+    "puzzles": ["2", "2", "2", "2", "2"]
+  },
+  {
+    "id": "3",
+    "name": "Bishop's Dunes",
+    "tagline": "Long diagonals across the sand.",
+    "theme": "desert",
+    "piece": "b",
+    "puzzles": ["3", "3", "3", "3", "3"]
+  },
+  {
+    "id": "4",
+    "name": "Rook's Frostpeak",
+    "tagline": "Straight lines, cold calculation.",
+    "theme": "frost",
+    "piece": "r",
+    "puzzles": ["4", "4", "4", "4", "4"]
+  },
+  {
+    "id": "5",
+    "name": "Queen's Crater",
+    "tagline": "The final climb. Nothing is safe.",
+    "theme": "volcano",
+    "piece": "q",
+    "puzzles": ["5", "5", "5", "5", "5"]
+  }
+]

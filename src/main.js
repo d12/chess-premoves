@@ -5,9 +5,12 @@ import {
 } from "./game/annotations.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
-import { getPuzzle, PUZZLES } from "./game/puzzles.js";
 import { createProgressStore } from "./game/progress.js";
+import { getLevel, getStage, LEVELS, nextLevel, nextStage, STAGES } from "./game/stages.js";
+import { renderScene, THEME_CONFETTI } from "./ui/scenery.js";
+import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
+import "./ui/worlds.css";
 
 const app = document.querySelector("#app");
 const files = "abcdefgh";
@@ -34,6 +37,12 @@ const state = {
   engine: null,
   error: null,
   progressStore: null,
+  stage: null, // the stage whose level map is open (screen "stage")
+  level: null, // the level being played (screen "puzzle"); state.puzzle is level.puzzle
+  // What the last win changed, played as animations the next time the map shows it:
+  // unlockedLevel/hopFrom (stage map), clearedStage (stage map), unlockedStage (world map).
+  fresh: { unlockedLevel: null, hopFrom: null, clearedStage: null, unlockedStage: null },
+  transitioning: false,
   puzzle: null,
   session: null,
   snapshot: null,
@@ -70,14 +79,19 @@ function renderPiece(color, type) {
 
 function renderHeader() {
   const engineStatus = state.engine ? "ENGINE READY" : "ENGINE SETUP";
+  const showStars = state.engine && state.progressStore;
+  const stars = showStars ? state.progressStore.perfectedIds().length : 0;
   return `
     <header class="topbar">
-      <button class="brand" type="button" data-action="home" aria-label="Go to puzzle index" ${state.engine ? "" : "disabled"}>
+      <button class="brand" type="button" data-action="home" aria-label="Go to world map" ${state.engine ? "" : "disabled"}>
         <span class="brand-mark" aria-hidden="true">♞</span>
         <span>PREMOVE</span>
       </button>
-      <span class="engine-pill ${state.engine ? "is-ready" : ""}">
-        <span class="status-dot"></span>${engineStatus}
+      <span class="topbar-status">
+        ${showStars ? `<span class="star-counter ${stars ? "has-stars" : ""}" title="Perfect solves" aria-label="${stars} of ${LEVELS.length} levels perfected"><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small></span>` : ""}
+        <span class="engine-pill ${state.engine ? "is-ready" : ""}">
+          <span class="status-dot"></span>${engineStatus}
+        </span>
       </span>
     </header>
   `;
@@ -112,56 +126,281 @@ function renderError() {
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-function renderIndex() {
+const LOCK_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><rect x="4" y="10" width="16" height="11.5" rx="3.2" fill="currentColor"/><circle cx="12" cy="15.4" r="1.7" fill="var(--lock-hole, #0004)"/></svg>`;
+
+function pieceImage(color, type) {
+  return pieceImages[`./assets/pieces/${color}${type}.png`];
+}
+
+function stageProgress(stage) {
+  const store = state.progressStore;
+  const completed = stage.levels.filter((level) => store.isCompleted(level.id)).length;
+  const perfected = stage.levels.filter((level) => store.isPerfected(level.id)).length;
+  return {
+    completed,
+    perfected,
+    total: stage.levels.length,
+    cleared: completed === stage.levels.length,
+    unlocked: store.isStageUnlocked(stage.id),
+  };
+}
+
+/** The first playable level that hasn't been beaten yet: where "continue" goes. */
+function currentLevel(levels = LEVELS) {
+  return levels.find((level) => state.progressStore.isUnlocked(level.id) && !state.progressStore.isCompleted(level.id)) ?? null;
+}
+
+function renderPips(stage, className = "") {
+  return `<span class="pips ${className}" aria-hidden="true">${stage.levels.map((level) => {
+    const status = state.progressStore.isPerfected(level.id) ? "is-perfect"
+      : state.progressStore.isCompleted(level.id) ? "is-complete" : "";
+    return `<span class="pip ${status}"></span>`;
+  }).join("")}</span>`;
+}
+
+function renderLandmark(stage) {
+  const image = pieceImage("w", stage.piece);
+  return `<span class="landmark" aria-hidden="true">${image
+    ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />`
+    : `<span class="landmark-glyph">${pieceSymbols.w[stage.piece]}</span>`}</span>`;
+}
+
+function renderWorldCard(stage, index) {
+  const progress = stageProgress(stage);
+  const previous = STAGES[index - 1];
+  // A world that the last win just opened is drawn locked, then unlocked by an animation.
+  const fresh = progress.unlocked && state.fresh.unlockedStage === stage.id;
+  const locked = !progress.unlocked || fresh;
+  const allPerfect = progress.perfected === progress.total;
+  const current = progress.unlocked && !progress.cleared;
+  const status = !progress.unlocked ? `Clear World ${previous?.id} to open`
+    : progress.cleared ? (allPerfect ? "Every level perfect" : "World cleared")
+      : progress.completed === 0 ? "New world" : `${progress.completed} of ${progress.total} levels`;
+  const classes = [
+    "world-card",
+    locked ? "is-locked" : "",
+    current ? "is-current" : "",
+    progress.cleared ? "is-cleared" : "",
+    progress.cleared && allPerfect ? "is-perfected" : "",
+  ].join(" ");
+  const clickable = progress.unlocked || import.meta.env.DEV;
+  return `
+    <li class="world-slot ${progress.unlocked ? "is-open" : ""}" style="--i: ${index}">
+      <button
+        class="${classes}"
+        type="button"
+        data-theme="${stage.theme}"
+        data-action="open-stage"
+        data-stage-id="${stage.id}"
+        ${fresh ? 'data-fresh="unlock-world"' : ""}
+        ${clickable ? "" : "disabled"}
+        aria-label="World ${stage.id}, ${escapeHTML(stage.name)}: ${status}${!progress.unlocked && import.meta.env.DEV ? " (development: click to open)" : ""}"
+      >
+        <span class="world-scene" style="view-transition-name: world-scene-${stage.id}">
+          ${renderScene(stage.theme)}
+          ${renderLandmark(stage)}
+          <span class="world-lock">${LOCK_ICON}</span>
+          ${progress.cleared ? `<span class="world-ribbon">${allPerfect ? "★ Perfect" : "Cleared"}</span>` : ""}
+        </span>
+        <span class="world-info">
+          <span class="world-number">World ${stage.id}</span>
+          <span class="world-name">${escapeHTML(stage.name)}</span>
+          <span class="world-meta">
+            ${renderPips(stage)}
+            <span class="world-status">${status}</span>
+          </span>
+        </span>
+      </button>
+    </li>
+  `;
+}
+
+function renderWorldMap() {
   const completedCount = state.progressStore.completedIds().length;
   const perfectedCount = state.progressStore.perfectedIds().length;
-  const levelCards = PUZZLES.map((puzzle) => {
-    const completed = state.progressStore.isCompleted(puzzle.id);
-    const perfected = state.progressStore.isPerfected(puzzle.id);
-    const unlocked = state.progressStore.isUnlocked(puzzle.id);
-    const status = !unlocked ? (import.meta.env.DEV ? "Locked · click to unlock" : "Locked")
-      : perfected ? "Perfected" : completed ? "Completed" : "Ready to play";
-    return `
-      <button
-        class="level-card ${perfected ? "is-perfect" : completed ? "is-complete" : ""} ${unlocked ? "" : "is-locked"}"
-        type="button"
-        data-action="open-puzzle"
-        data-puzzle-id="${puzzle.id}"
-        ${unlocked || import.meta.env.DEV ? "" : "disabled"}
-        aria-label="Level ${puzzle.id}, ${status}"
-      >
-        <span class="level-number">${puzzle.id}</span>
-        <span class="level-mark" aria-hidden="true">${perfected ? "★" : completed ? "✓" : unlocked ? "→" : "•"}</span>
-        <span class="level-title">LEVEL ${puzzle.id}</span>
-        <span class="level-status">${status}</span>
-      </button>
-    `;
-  }).join("");
+  const next = currentLevel();
+  const finished = completedCount === LEVELS.length;
+  const cards = STAGES.map(renderWorldCard).join("");
+  state.fresh.unlockedStage = null; // consumed: the card above carries data-fresh
 
   return `
     ${renderHeader()}
-    <main class="index-screen">
-      <section class="index-hero">
-        <p class="eyebrow">Chess vision trainer</p>
-        <h1>See the mate<br />before you move.</h1>
-        <p class="index-copy">Read the position, queue your line, and trust your vision when the board starts moving.</p>
-      </section>
-      <section class="levels-section" aria-labelledby="levels-heading">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Your training path</p>
-            <h2 id="levels-heading">Puzzle index</h2>
+    <main class="world-screen">
+      <section class="world-hero">
+        <div class="world-hero-copy">
+          <h1>Pick a world</h1>
+          <p>Five worlds, five levels each. Clear every level in a world to open the next one.</p>
+        </div>
+        <div class="world-hero-side">
+          <div class="journey" aria-label="${completedCount} of ${LEVELS.length} levels cleared, ${perfectedCount} perfect">
+            <span class="journey-count"><strong>${completedCount}</strong>/${LEVELS.length} levels</span>
+            <span class="journey-bar" aria-hidden="true"><span style="width: ${(completedCount / LEVELS.length) * 100}%"></span></span>
           </div>
-          <div class="completion-count">
-            <strong>${completedCount}<span> / ${PUZZLES.length}</span></strong>
-            <small>completed${perfectedCount ? ` · <span class="perfect-count">★ ${perfectedCount} perfect</span>` : ""}</small>
+          ${next ? `
+            <button class="game-button continue-button" type="button" data-action="open-level" data-level-id="${next.id}" data-theme="${getStage(next.stageId).theme}">
+              <span class="continue-label">${completedCount === 0 ? "Start" : "Continue"}</span>
+              <span class="continue-level">Level ${next.id}</span>
+            </button>
+          ` : ""}
+          ${finished ? `<p class="journey-done">${perfectedCount === LEVELS.length ? "Every level perfected. Flawless." : `All worlds cleared. ${LEVELS.length - perfectedCount} levels left to perfect.`}</p>` : ""}
+        </div>
+      </section>
+      <ol class="world-row" aria-label="Worlds">${cards}</ol>
+      <p class="unlock-note">Solve a level in the fewest possible premoves to perfect it and earn its <span class="perfect-star" aria-hidden="true">★</span></p>
+      ${import.meta.env.DEV ? '<p class="unlock-note">Development: locked worlds and levels open when clicked, for this session only.</p>' : ""}
+      <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
+    </main>
+  `;
+}
+
+// Where the five level nodes sit on a stage map, in % of the map: a wide layout and a tall
+// one for narrow screens. The trail is drawn through the same points.
+const MAP_LAYOUTS = {
+  wide: [[9, 72], [29, 47], [50, 71], [71, 46], [89, 66]],
+  tall: [[24, 86], [72, 72], [32, 56], [70, 39], [32, 22]],
+};
+
+function trailSegment(points, index) {
+  // Catmull-Rom through the nodes, as one cubic Bézier per segment
+  const at = (i) => points[Math.max(0, Math.min(points.length - 1, i))];
+  const [p0, p1, p2, p3] = [at(index - 1), at(index), at(index + 1), at(index + 2)];
+  const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+  const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+  return `M${p1[0]} ${p1[1]} C${c1[0]} ${c1[1]} ${c2[0]} ${c2[1]} ${p2[0]} ${p2[1]}`;
+}
+
+function renderTrail(stage, layout, freshIndex) {
+  const points = MAP_LAYOUTS[layout];
+  const segments = points.slice(0, -1).map((_, index) => {
+    const d = trailSegment(points, index);
+    const lit = state.progressStore.isCompleted(stage.levels[index].id);
+    return `<path class="trail-bed" d="${d}" vector-effect="non-scaling-stroke"/>${lit
+      ? `<path class="trail-lit" d="${d}" vector-effect="non-scaling-stroke" ${index === freshIndex ? 'data-fresh="draw"' : ""}/>`
+      : `<path class="trail-dots" d="${d}" vector-effect="non-scaling-stroke"/>`}`;
+  }).join("");
+  return `<svg class="trail trail-${layout}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">${segments}</svg>`;
+}
+
+const mapPosition = (index) => {
+  const [x, y] = MAP_LAYOUTS.wide[index];
+  const [mx, my] = MAP_LAYOUTS.tall[index];
+  return `--x: ${x}; --y: ${y}; --mx: ${mx}; --my: ${my};`;
+};
+
+function renderLevelNode(level, index, { freshUnlock }) {
+  const store = state.progressStore;
+  const unlocked = store.isUnlocked(level.id);
+  const completed = store.isCompleted(level.id);
+  const perfected = store.isPerfected(level.id);
+  const fresh = freshUnlock === level.id;
+  const status = !unlocked ? (import.meta.env.DEV ? "locked, click to unlock" : "locked")
+    : perfected ? "perfected" : completed ? "completed" : "ready to play";
+  const stateClass = !unlocked ? "is-locked" : perfected ? "is-perfect" : completed ? "is-complete" : "is-ready";
+  return `
+    <li class="map-pin node-pin" style="${mapPosition(index)}">
+      <button
+        class="level-node ${stateClass}"
+        type="button"
+        data-action="open-level"
+        data-level-id="${level.id}"
+        ${fresh ? 'data-fresh="unlock-level"' : ""}
+        ${unlocked || import.meta.env.DEV ? "" : "disabled"}
+        aria-label="Level ${level.id}, ${status}"
+        title="Level ${level.id}${unlocked ? `: ${escapeHTML(level.puzzle.title)}` : ""}"
+      >
+        <span class="node-face">
+          <span class="node-number">${level.number}</span>
+          <span class="node-lock">${LOCK_ICON}</span>
+        </span>
+        ${perfected ? '<span class="node-badge is-star" aria-hidden="true">★</span>'
+          : completed ? '<span class="node-badge is-check" aria-hidden="true">✓</span>' : ""}
+      </button>
+    </li>
+  `;
+}
+
+function renderStage() {
+  const stage = state.stage;
+  const progress = stageProgress(stage);
+  const freshUnlock = state.fresh.unlockedLevel && getLevel(state.fresh.unlockedLevel).stageId === stage.id
+    ? state.fresh.unlockedLevel : null;
+  const hopFrom = freshUnlock ? state.fresh.hopFrom : null;
+  const freshClear = state.fresh.clearedStage === stage.id;
+  if (freshUnlock) {
+    state.fresh.unlockedLevel = null;
+    state.fresh.hopFrom = null;
+  }
+  if (freshClear) {
+    state.fresh.clearedStage = null;
+  }
+  const freshIndex = freshUnlock ? stage.levels.findIndex((level) => level.id === freshUnlock) - 1 : -1;
+  const next = currentLevel(stage.levels);
+  // the stage's piece stands on the level to play next, or on the goal once the stage is clear
+  const tokenLevel = next ?? (progress.cleared ? stage.levels.at(-1) : null);
+  const tokenIndex = tokenLevel ? stage.levels.indexOf(tokenLevel) : -1;
+  const hopIndex = hopFrom ? stage.levels.findIndex((level) => level.id === hopFrom) : -1;
+  const tokenImage = pieceImage("w", stage.piece);
+  const following = nextStage(stage.id);
+  const allPerfect = progress.perfected === progress.total;
+
+  let footer;
+  if (!progress.unlocked) {
+    footer = `<p class="stage-footer-copy">Clear every level of World ${STAGES[STAGES.indexOf(stage) - 1].id} to open this world.</p>`;
+  } else if (progress.cleared) {
+    footer = `
+      <div class="stage-footer-copy">
+        <strong>${allPerfect ? "World perfected" : "World cleared"}</strong>
+        <span>${allPerfect ? "Every level solved in the fewest premoves." : `★ ${progress.perfected} of ${progress.total} perfect. Replay a level in fewer premoves to perfect it.`}</span>
+      </div>
+      <button class="game-button" type="button" data-action="home">${following ? `On to World ${following.id}` : "World map"}</button>
+    `;
+  } else if (next) {
+    footer = `
+      <div class="stage-footer-copy">
+        <strong>Next up: level ${next.id}</strong>
+        <span>${escapeHTML(next.puzzle.title)}</span>
+      </div>
+      <button class="game-button" type="button" data-action="open-level" data-level-id="${next.id}">Play level ${next.id}</button>
+    `;
+  } else {
+    footer = '<p class="stage-footer-copy">Pick any open level to play.</p>';
+  }
+
+  return `
+    ${renderHeader()}
+    <main class="stage-screen" data-theme="${stage.theme}">
+      <div class="stage-heading">
+        <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
+        <div class="stage-title-row">
+          <div class="stage-title">
+            <p class="world-number">World ${stage.id}</p>
+            <h1>${escapeHTML(stage.name)}</h1>
+            <p class="stage-tagline">${escapeHTML(stage.tagline)}</p>
+          </div>
+          <div class="stage-score" aria-label="${progress.completed} of ${progress.total} levels cleared, ${progress.perfected} perfect">
+            ${renderPips(stage, "is-large")}
+            <span>${progress.completed}/${progress.total} cleared${progress.perfected ? ` · <span class="perfect-count">★ ${progress.perfected}</span>` : ""}</span>
           </div>
         </div>
-        <div class="level-grid">${levelCards}</div>
-        <p class="unlock-note">Complete a level to unlock the next one. Solve it in the minimum number of premoves to perfect it <span class="perfect-star" aria-hidden="true">★</span></p>
-        ${import.meta.env.DEV ? '<p class="unlock-note">Development: click a locked level to unlock and play it for this session.</p>' : ""}
+      </div>
+      <section class="stage-map ${progress.unlocked ? "" : "is-locked"}" style="view-transition-name: world-scene-${stage.id}" aria-label="Levels of ${escapeHTML(stage.name)}">
+        ${renderScene(stage.theme, { wide: true })}
+        ${renderTrail(stage, "wide", freshIndex)}
+        ${renderTrail(stage, "tall", freshIndex)}
+        <ol class="level-nodes">${stage.levels.map((level, index) => renderLevelNode(level, index, { freshUnlock })).join("")}</ol>
+        <span class="map-pin goal-pin" style="${mapPosition(stage.levels.length - 1)}" aria-hidden="true">
+          <span class="goal-flag ${progress.cleared ? "is-raised" : ""}" ${freshClear ? 'data-fresh="raise-flag"' : ""}>
+            <span class="flag-pole"></span><span class="flag-cloth">★</span>
+          </span>
+        </span>
+        ${tokenIndex >= 0 && tokenImage ? `
+          <span class="map-pin token-pin" style="${mapPosition(hopIndex >= 0 ? hopIndex : tokenIndex)}" ${hopIndex >= 0 ? `data-fresh="hop" data-hop-to="${tokenIndex}"` : ""} aria-hidden="true">
+            <span class="token"><img src="${escapeHTML(tokenImage)}" alt="" draggable="false" /></span>
+          </span>
+        ` : ""}
+        ${progress.cleared ? `<span class="stage-ribbon ${allPerfect ? "is-perfect" : ""}" ${freshClear ? 'data-fresh="stamp"' : ""}>${allPerfect ? "★ Perfect!" : "World clear!"}</span>` : ""}
       </section>
-      <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
+      <div class="stage-footer">${footer}</div>
     </main>
   `;
 }
@@ -284,9 +523,9 @@ function renderOutcome() {
       <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
-        ${canOpenNextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
+        ${renderForwardButton()}
         <button class="secondary-button" type="button" data-action="retry-puzzle">Play again</button>
-        <button class="text-button" type="button" data-action="home">Puzzle index</button>
+        <button class="text-button" type="button" data-action="open-stage" data-stage-id="${state.level.stageId}">Level map</button>
       </div>
     </div>
   `;
@@ -304,24 +543,37 @@ function renderOutcome() {
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
         <button class="secondary-button" type="button" data-action="retry-puzzle">Retry level</button>
-        ${victory && canOpenNextPuzzle() ? '<button class="primary-button" type="button" data-action="next-puzzle">Next level <span aria-hidden="true">→</span></button>' : ""}
-        <button class="text-button" type="button" data-action="home">Puzzle index</button>
+        ${victory ? renderForwardButton() : ""}
+        <button class="text-button" type="button" data-action="open-stage" data-stage-id="${state.level.stageId}">Level map</button>
       </div>
     </div>
   `;
 }
 
-function nextPuzzle() {
-  if (!state.puzzle) {
+/** The next level in the same stage, or null on a stage's last level. */
+function nextLevelInStage() {
+  if (!state.level) {
     return null;
   }
-  const index = PUZZLES.findIndex((puzzle) => puzzle.id === state.puzzle.id);
-  return PUZZLES[index + 1] ?? null;
+  const next = nextLevel(state.level.id);
+  return next?.stageId === state.level.stageId ? next : null;
 }
 
-function canOpenNextPuzzle() {
-  const next = nextPuzzle();
+function canOpenNextLevel() {
+  const next = nextLevelInStage();
   return Boolean(next) && (import.meta.env.DEV || state.progressStore.isUnlocked(next.id));
+}
+
+// After a win: "Next level" inside a stage; after a stage's last level, back to its map,
+// where the stage-clear celebration plays.
+function renderForwardButton() {
+  if (canOpenNextLevel()) {
+    return '<button class="primary-button" type="button" data-action="next-level">Next level <span aria-hidden="true">→</span></button>';
+  }
+  if (!nextLevelInStage() && state.progressStore.isStageCleared(state.level.stageId)) {
+    return `<button class="primary-button" type="button" data-action="open-stage" data-stage-id="${state.level.stageId}">Continue <span aria-hidden="true">→</span></button>`;
+  }
+  return "";
 }
 
 function renderPuzzle() {
@@ -339,20 +591,25 @@ function renderPuzzle() {
   );
   const moveCount = snapshot.premoves.length;
 
+  const stage = getStage(state.level.stageId);
   return `
     ${renderHeader()}
-    <main class="puzzle-screen">
+    <main class="puzzle-screen" data-theme="${stage.theme}">
       <div class="game-layout">
         <div class="puzzle-heading">
-          <button class="back-button" type="button" data-action="home" ${snapshot.phase === "playing" ? "disabled" : ""}>
-            <span aria-hidden="true">←</span> Puzzle index
+          <button class="back-button" type="button" data-action="open-stage" data-stage-id="${stage.id}" aria-label="Back to ${escapeHTML(stage.name)}" ${snapshot.phase === "playing" ? "disabled" : ""}>
+            <span aria-hidden="true">←</span> <span class="back-label">${escapeHTML(stage.name)}</span>
           </button>
-          <p class="eyebrow">Level ${state.puzzle.id} of ${PUZZLES.length}</p>
+          <p class="level-kicker">
+            <span class="level-badge">${state.level.id}</span>
+            <span class="level-kicker-text">World ${stage.id}, level ${state.level.number} of ${stage.levels.length}</span>
+            ${renderPips(stage)}
+          </p>
           <h1>${escapeHTML(state.puzzle.title)}</h1>
           <p class="par-line">
             ${state.puzzle.number_of_moves ? `<span class="par-chip">Perfect in ${plural(state.puzzle.number_of_moves, "premove")}</span>` : ""}
-            <span class="par-chip is-attempts">${plural(state.progressStore.attemptCount(state.puzzle.id), "attempt")}</span>
-            ${state.progressStore.isPerfected(state.puzzle.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
+            <span class="par-chip is-attempts">${plural(state.progressStore.attemptCount(state.level.id), "attempt")}</span>
+            ${state.progressStore.isPerfected(state.level.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
           </p>
         </div>
 
@@ -484,7 +741,9 @@ function render() {
   } else if (state.screen === "error") {
     app.innerHTML = renderError();
   } else if (state.screen === "index") {
-    app.innerHTML = renderIndex();
+    app.innerHTML = renderWorldMap();
+  } else if (state.screen === "stage") {
+    app.innerHTML = renderStage();
   } else if (state.screen === "puzzle") {
     app.innerHTML = renderPuzzle();
   }
@@ -511,6 +770,126 @@ function render() {
     cannons();
   }
   state.revealOutcome = false;
+  if (!state.transitioning) {
+    playMapEffects();
+  }
+}
+
+// Screen changes cross-fade, and a world card grows into its level map (View Transitions,
+// where supported). Map animations wait until the transition has finished.
+function navigate(update) {
+  if (!document.startViewTransition || prefersReducedMotion() || state.screen === "loading") {
+    update();
+    render();
+    return;
+  }
+  const transition = document.startViewTransition(() => {
+    state.transitioning = true;
+    update();
+    render();
+  });
+  transition.finished.finally(() => {
+    state.transitioning = false;
+    playMapEffects();
+  });
+}
+
+// Plays what the last win changed, marked with data-fresh by the map renderers: a level's
+// lock breaking, the trail drawing on, the piece hopping to the new level, the goal flag going
+// up with a "World clear!" stamp, or a newly opened world on the world map.
+function playMapEffects() {
+  const freshElements = [...app.querySelectorAll("[data-fresh]")];
+  if (freshElements.length === 0) {
+    return;
+  }
+  const reduced = prefersReducedMotion();
+  for (const element of freshElements) {
+    const effect = element.dataset.fresh;
+    delete element.dataset.fresh;
+    if (effect === "draw") {
+      drawTrail(element, reduced);
+    } else if (effect === "hop") {
+      hopToken(element, Number(element.dataset.hopTo), reduced);
+    } else if (effect === "unlock-world") {
+      element.classList.add("is-unlocking");
+      element.classList.remove("is-locked");
+      if (!reduced) {
+        element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        setTimeout(() => {
+          const lock = element.querySelector(".world-lock")?.getBoundingClientRect();
+          if (lock?.width) {
+            burst({
+              x: lock.left + lock.width / 2,
+              y: lock.top + lock.height / 2,
+              count: 60,
+              power: 0.6,
+              palette: THEME_CONFETTI[element.dataset.theme] ?? PALETTES.victory,
+              shapes: ["star", "circle", "rect"],
+            });
+          }
+        }, 420);
+      }
+    } else if (effect === "raise-flag") {
+      element.classList.add("is-raised", "is-raising");
+    } else if (effect === "stamp") {
+      element.classList.add("is-stamping");
+      if (!reduced) {
+        const rect = element.getBoundingClientRect();
+        const theme = element.closest("[data-theme]")?.dataset.theme;
+        setTimeout(() => burst({
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          count: 110,
+          palette: THEME_CONFETTI[theme] ?? PALETTES.victory,
+          shapes: ["star", "rect", "ribbon", "circle"],
+        }), 520);
+      }
+    } else {
+      element.classList.add("is-animating"); // trail draw, level unlock: CSS keyframes
+    }
+  }
+}
+
+// The trail's stroke doesn't scale with the stretched map, so its dashes are measured in
+// screen pixels: draw it on with a dash as long as the segment is on screen.
+function drawTrail(path, reduced) {
+  const matrix = path.getScreenCTM();
+  if (reduced || !matrix || !path.animate || path.getBoundingClientRect().width === 0) {
+    return; // hidden layout (wide vs tall) or reduced motion: just show it
+  }
+  const total = path.getTotalLength();
+  let length = 0;
+  let previous = null;
+  for (let step = 0; step <= 24; step += 1) {
+    const point = path.getPointAtLength((total * step) / 24).matrixTransform(matrix);
+    if (previous) {
+      length += Math.hypot(point.x - previous.x, point.y - previous.y);
+    }
+    previous = point;
+  }
+  path.style.strokeDasharray = `${length} ${length}`;
+  path.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], {
+    duration: 560, delay: 120, easing: "ease-out", fill: "backwards",
+  }).finished.then(() => path.style.removeProperty("stroke-dasharray"), () => {});
+}
+
+function hopToken(pin, toIndex, reduced) {
+  const before = pin.getBoundingClientRect();
+  pin.setAttribute("style", mapPosition(toIndex));
+  if (reduced || !pin.animate) {
+    return;
+  }
+  const after = pin.getBoundingClientRect();
+  const dx = before.left - after.left;
+  const dy = before.top - after.top;
+  const lift = Math.max(48, Math.abs(dx) * 0.35);
+  pin.animate([
+    { transform: `translate(${dx}px, ${dy}px)` },
+    { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - lift}px)`, offset: 0.5 },
+    { transform: "translate(0, 0)", offset: 0.88 },
+    { transform: "translate(0, 0) scale(1.12, 0.86)", offset: 0.94 },
+    { transform: "translate(0, 0)" },
+  ], { duration: 640, delay: 260, easing: "cubic-bezier(0.45, 0, 0.4, 1)", fill: "backwards" });
 }
 
 async function initializeApp() {
@@ -533,19 +912,68 @@ async function initializeApp() {
   }
 }
 
-function openPuzzle(id) {
+function clearPuzzle() {
+  state.level = null;
+  state.puzzle = null;
+  state.session = null;
+  state.snapshot = null;
+  state.selectedSquare = null;
+  state.promotionRequest = null;
+}
+
+function openWorldMap() {
+  navigate(() => {
+    clearPuzzle();
+    state.stage = null;
+    state.screen = "index";
+  });
+}
+
+function openStage(id) {
+  const stage = getStage(id);
+  if (!state.progressStore.isStageUnlocked(stage.id) && !import.meta.env.DEV) {
+    return;
+  }
+  navigate(() => {
+    clearPuzzle();
+    state.stage = stage;
+    state.screen = "stage";
+  });
+}
+
+function openLevel(id, { transition = true } = {}) {
   if (import.meta.env.DEV && !state.progressStore.isUnlocked(id)) {
     state.progressStore.unlockForDevelopment(id);
   }
   if (!state.progressStore.isUnlocked(id)) {
     return;
   }
+  const level = getLevel(id);
+  const show = () => {
+    resetLevel(level);
+    state.screen = "puzzle";
+  };
+  if (transition && state.screen !== "puzzle") {
+    navigate(show);
+  } else {
+    show();
+    render();
+  }
+}
+
+function resetLevel(level) {
+  if (state.fresh.unlockedLevel === level.id) {
+    state.fresh.unlockedLevel = null; // played straight away: no unlock animation later
+    state.fresh.hopFrom = null;
+  }
   state.annotations = EMPTY_ANNOTATIONS;
   state.drawingArrow = null;
   state.pendingPieceMove = null;
   state.pendingCelebration = null;
   state.revealOutcome = false;
-  state.puzzle = getPuzzle(id);
+  state.level = level;
+  state.stage = getStage(level.stageId);
+  state.puzzle = level.puzzle;
   state.session = createPremoveGame(state.puzzle);
   state.snapshot = state.session.snapshot();
   state.selectedSquare = null;
@@ -553,8 +981,6 @@ function openPuzzle(id) {
   state.interactionError = "";
   state.progressError = "";
   state.executionError = "";
-  state.screen = "puzzle";
-  render();
 }
 
 function queueSelectedMove(from, to, promotion) {
@@ -613,12 +1039,32 @@ function selectSquare(square) {
   render();
 }
 
+// Saves a win and notes what it opened up, for the maps to animate next time they show.
+function recordWin(level, perfect) {
+  const store = state.progressStore;
+  const next = nextLevel(level.id);
+  const nextWasOpen = next ? store.isUnlocked(next.id) : true;
+  const stageWasCleared = store.isStageCleared(level.stageId);
+  store.markCompleted(level.id, { perfect });
+  if (next && !nextWasOpen && store.isUnlocked(next.id)) {
+    if (next.stageId === level.stageId) {
+      state.fresh.unlockedLevel = next.id;
+      state.fresh.hopFrom = level.id;
+    } else {
+      state.fresh.unlockedStage = next.stageId;
+    }
+  }
+  if (!stageWasCleared && store.isStageCleared(level.stageId)) {
+    state.fresh.clearedStage = level.stageId;
+  }
+}
+
 async function submitPremoves() {
   state.interactionError = "";
   state.executionError = "";
   // every submitted line counts as an attempt; shown on the puzzle page
   try {
-    state.progressStore.recordAttempt(state.puzzle.id);
+    state.progressStore.recordAttempt(state.level.id);
     state.progressError = "";
   } catch (error) {
     state.progressError = error.message;
@@ -657,7 +1103,7 @@ async function submitPremoves() {
         state.snapshot = snapshot;
         if (snapshot.phase === "complete" && snapshot.outcome === "victory") {
           try {
-            state.progressStore.markCompleted(state.puzzle.id, { perfect: snapshot.perfect });
+            recordWin(state.level, snapshot.perfect);
             state.progressError = "";
           } catch (error) {
             state.progressError = error.message;
@@ -681,17 +1127,16 @@ app.addEventListener("click", (event) => {
       if (!state.engine || state.snapshot?.phase === "playing") {
         return;
       }
-      state.screen = "index";
-      state.puzzle = null;
-      state.session = null;
-      state.snapshot = null;
-      state.selectedSquare = null;
-      state.promotionRequest = null;
-      render();
+      openWorldMap();
+    } else if (action === "open-stage") {
+      if (state.snapshot?.phase === "playing") {
+        return;
+      }
+      openStage(actionElement.dataset.stageId);
     } else if (action === "retry-setup") {
       void initializeApp();
-    } else if (action === "open-puzzle") {
-      openPuzzle(actionElement.dataset.puzzleId);
+    } else if (action === "open-level") {
+      openLevel(actionElement.dataset.levelId);
     } else if (action === "submit" && state.snapshot.phase === "planning") {
       void submitPremoves();
     } else if (action === "undo" && state.snapshot.phase === "planning") {
@@ -700,11 +1145,11 @@ app.addEventListener("click", (event) => {
       state.selectedSquare = null;
       render();
     } else if (action === "retry-puzzle") {
-      openPuzzle(state.puzzle.id);
-    } else if (action === "next-puzzle") {
-      const next = nextPuzzle();
+      openLevel(state.level.id);
+    } else if (action === "next-level") {
+      const next = nextLevelInStage();
       if (next) {
-        openPuzzle(next.id);
+        openLevel(next.id);
       }
     } else if (action === "choose-promotion") {
       const request = state.promotionRequest;
@@ -853,6 +1298,13 @@ app.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.promotionRequest) {
     state.promotionRequest = null;
     render();
+  }
+});
+
+// Escape on a level map goes back to the world map, like backing out of a game menu.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.screen === "stage" && !event.defaultPrevented) {
+    openWorldMap();
   }
 });
 

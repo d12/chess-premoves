@@ -1,12 +1,12 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of `main` @ `70f70bc` (3 Nov 2026), which has 5 puzzles and 46 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stages/world-map PR (3 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, and 52 passing tests.
 
 ---
 
 ## 1. What this is
 
-**Premove** is a browser chess-vision trainer. Each level is a position with White to move. The player queues a whole sequence of **premoves** (chess.com/lichess style) and then submits it. The game then plays the line out against an opponent that **knows the entire plan** and picks the defence that breaks it. The player wins only if the line forces checkmate against every defence. Mate may come before the last premove.
+**Premove** is a browser chess-vision trainer, structured like a video game: **5 worlds ("stages") of 5 levels each**, picked from a world map and then from each world's level map. Each level is a position with White to move. The player queues a whole sequence of **premoves** (chess.com/lichess style) and then submits it. The game then plays the line out against an opponent that **knows the entire plan** and picks the defence that breaks it. The player wins only if the line forces checkmate against every defence. Mate may come before the last premove.
 
 The repo has two products:
 
@@ -40,14 +40,19 @@ The owner, Nathaniel (GitHub `d12`), designs the puzzles and plays the game; the
 ```
 index.html, vite.config.js (base: "./" so it works under /chess-premoves/)
 src/
-  main.js                 UI: rendering, events, playback, celebrations (≈860 lines, the only UI file)
-  style.css               all styles; CSS tokens on :root (--green, --gold, --red …)
+  main.js                 UI: rendering, events, playback, celebrations, world/level maps (≈1300 lines)
+  style.css               base styles; CSS tokens on :root (--green, --gold, --red …)
+  ui/
+    worlds.css            world map, level maps and per-world themes ([data-theme] tokens, keyframes)
+    scenery.js            flat SVG landscapes per theme (renderScene) + per-theme confetti colours
   game/
     session.js            UI-independent game engine: planning, premove queue, playback (createPremoveGame)
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts (createProgressStore)
     puzzles.json          the levels (written by `ppz app`)
     puzzles.js            frozen PUZZLES list + getPuzzle(id)
+    stages.json           the world/level layout: which puzzle each level uses (hand-edited)
+    stages.js             STAGES, LEVELS, getStage, getLevel, nextLevel, nextStage
     annotations.js        right-click arrows and highlights (pure helpers + SVG)
   engine/
     premoveOpponent.js    loads the WASM refuter; createPremoveOpponent() → { bestMove(fen), analysis }
@@ -131,12 +136,14 @@ There is **no Stockfish in the game**. It was removed because it plays good ches
 ### 4.5 Persistent state (`progress.js`)
 
 - localStorage key: `chess-premove-progress-v1`.
-- Value: `{ completedIds: string[], perfectedIds: string[], attempts: { [id]: int } }`.
+- Value: `{ completedIds: string[], perfectedIds: string[], attempts: { [id]: int } }`, where the ids are **level ids** (`"2-3"` = world 2, level 3), not puzzle ids, because one puzzle can appear in several levels.
+- Saves from before stages hold puzzle numbers (`"1"`…). They still load and those entries are kept on save, but they match no level, so they count for nothing (old progress does not carry over; a tested decision, see `test/progress.test.js`).
 - Older saves without `perfectedIds` or `attempts` must keep loading, and they do; preserve this.
 - Corrupt data **throws**; it is never silently discarded. All writes go through one `save()` helper.
-- API: `isCompleted`, `isPerfected`, `isUnlocked`, `markCompleted(id, {perfect})`, `attemptCount`, `recordAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
-- Levels unlock sequentially. **Progress is keyed by puzzle number**, so inserting or replacing levels shifts what returning players see as completed.
-- **Dev mode** (`import.meta.env.DEV`, i.e. `npm run dev`): clicking a locked level unlocks it for the current page session only.
+- API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})`, `attemptCount`, `recordAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
+- Levels unlock in play order (1-1 … 1-5, 2-1 …): a level needs every earlier level completed, so a world opens only once the whole previous world is cleared.
+- Progress is keyed by **level slot**, so pointing a level at a different puzzle in `stages.json` keeps that slot's completion for returning players.
+- **Dev mode** (`import.meta.env.DEV`, i.e. `npm run dev`): clicking a locked level unlocks it for the current page session only; locked worlds can be opened too.
 
 ### 4.6 `puzzles.json` schema
 
@@ -150,10 +157,28 @@ An array, numbered `"1".."N"` with no gaps:
 
 Edit it with `ppz app …` (§6), not by hand. `test/puzzles.test.js` checks each puzzle: numbering, that the solution can be entered on the planning board, and that it actually beats the refuter.
 
+### 4.6b `stages.json` schema (the world/level layout)
+
+Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists the puzzle id used by each of its levels:
+
+```json
+{ "id": "2", "name": "Knight's Wood", "tagline": "Paths twist between the pines.",
+  "theme": "forest", "piece": "n", "puzzles": ["2","2","2","2","2"] }
+```
+
+- For now every world repeats one puzzle (world N = puzzle N ×5) until more puzzles exist; replace entries as puzzles are added.
+- `theme` must be one of `meadow`, `forest`, `desert`, `frost`, `volcano` (styled in `ui/worlds.css`, drawn in `ui/scenery.js`). `piece` is the world's mascot (`p n b r q k`): the landmark on its card and the token on its level map.
+- `test/stages.test.js` checks 5 worlds × 5 levels, ids `S-L`, display fields, distinct themes and that every puzzle id exists. Change those counts in the test if the structure changes on purpose.
+
 ### 4.7 UI architecture (`main.js`)
 
 - **One global `state` object and full re-render.** `render()` replaces `app.innerHTML` from `state` on almost every change. Never hold DOM references across renders. Effects that must run once use **one-shot flags consumed by `render()`**: `pendingPieceMove` (slide animation), `pendingCelebration`, `revealOutcome`.
-- Screens: `loading`, `index`, `puzzle`, `error`. The index level cards show status only (Locked / Ready / Completed / Perfected ★ in gold). Per the owner, they **don't show move counts**. The puzzle page heading shows chips: "Perfect in N premoves", "N attempts" and "★ Perfected".
+- Screens: `loading`, `index` (the **world map**), `stage` (a world's **level map**), `puzzle`, `error`.
+  - **World map:** one illustrated card per world (themed SVG scene, the world's piece as landmark, 5 progress pips, status). Locked worlds are dimmed with the piece as a black silhouette and a padlock; cleared worlds get a "Cleared" / "★ Perfect" corner ribbon. A dotted road links the cards. The hero has a levels-cleared bar and a **Continue · Level S-L** button that jumps straight into the next unbeaten level.
+  - **Level map:** the world's panorama with a winding trail through 5 round level nodes (locked padlock / ready with pulse ring / white ✓ completed / gold ★ perfected). The world's piece stands on the next level to play and bobs; a goal flag by level 5 is raised (gold) once the world is cleared, with a "World clear!" / "★ Perfect!" stamp. Footer: "Next up" + Play button, or "On to World N". Escape goes back to the world map. Nodes have a tall layout under 640px.
+  - Neither map shows move counts (owner's rule). The puzzle page heading shows a themed `S-L` badge, "World S, level L of 5" and pips, then chips: "Perfect in N premoves", "N attempts" and "★ Perfected". The back button returns to the world's level map.
+- **Navigation** goes through `navigate(update)`, which wraps the screen change in a View Transition (a world card grows into its level map via `view-transition-name: world-scene-N`). Skipped without browser support or with reduced motion. The transition overlay takes input for ~420 ms.
+- **Win → map animations.** `recordWin()` notes what a win opened in `state.fresh` (`unlockedLevel`/`hopFrom`, `clearedStage`, `unlockedStage`). The next render of the relevant map consumes it and marks elements with `data-fresh`; `playMapEffects()` runs after the transition finishes: the new level's lock shakes off and it pops, its trail segment draws on (dash length measured in screen pixels, because the trail uses `vector-effect: non-scaling-stroke`), the piece hops to it; on a world clear the flag rises, the stamp lands and themed confetti fires; on the world map the new world's lock bursts and its colours flood back. Playing the unlocked level straight away (Next level) drops its pending animation.
 - **Board DOM.** `.board` is a CSS grid of 64 `<button class="square" data-square="e4">` elements, white at the bottom. It also holds two SVG overlays with `viewBox="0 0 8 8"`: `.board-highlights` (z 1, under the pieces) and `.board-arrows` (z 4, above everything). `.piece` has z-index 2 and coordinates have 3. **Only real squares may carry `data-square`**, because code uses `querySelector('[data-square=…]')` and `closest('[data-square]')`. Overlays use `data-highlight` and `data-from`/`data-to`.
 - **Input.**
   - Click-to-move, plus HTML5 drag and drop. On drag start, the source square gets `is-drag-source` **via `setTimeout(0)`**, so the browser's drag image is captured before the piece is hidden. `dragend` clears it.
@@ -171,7 +196,8 @@ Edit it with `ppz app …` (§6), not by hand. `test/puzzles.test.js` checks eac
   - **Perfect:** 160 gold confetti pieces with stars burst from the king, and gold cannons fire from the bottom corners when the result card appears. The card pops in, the ★ spins in and a shimmer crosses the card.
   - **Non-perfect win:** **80** red/blue/green/yellow pieces, half as many. The owner tried a deliberately sad grey fizzle and rejected it as "too depressing": a win is still a win.
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
-- Loss and draw cards have Retry, Next (wins only, if unlocked) and Index buttons.
+- Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
+- Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
 ---
 
@@ -218,24 +244,28 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 46 tests in 7 files, about 25 s.
+- `npm test`: 52 tests in 8 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
-  - `progress`: storage, migration, attempts
+  - `progress`: storage, migration, attempts, stage gating, pre-stage saves
+  - `stages`: the 5×5 layout in `stages.json`
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
 - **`main.js` has no unit tests.** That is how a `ReferenceError` that froze every win reached production (PR #9). After any UI change, **drive the real page in a headless browser.** What has worked:
   - Start `npx vite --port <p> --strictPort` in the background, then use Puppeteer or Playwright with Chromium.
+  - Open worlds with `.world-card[data-stage-id="1"]` and levels with `.level-node[data-level-id="1-1"]` (or `.continue-button`).
+  - **Wait for screen transitions** before clicking: `page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"))`. Clicks during one are swallowed.
   - Click squares via `button[data-square="e2"]`.
   - Submit with `[data-action="submit"]` and wait for `.outcome-card`.
   - Collect `pageerror` and console errors.
   - Take screenshots and look at them.
-- **Lines that are known to work:**
-  - Level 1: `d2c3 e1b1 c3a1` is the perfect solve.
-  - Level 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
-  - A losing line: level 1 `d2d7`.
+- **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
+  - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
+  - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
+  - A losing line: puzzle 1 `d2d7`.
+  - A full 25-level playthrough of the production build (all perfect) takes about 3 minutes headless.
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
 - Headless-browser caveats:
@@ -248,7 +278,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 ## 8. Product decisions already made (don't undo without asking)
 
 - chess.com parity for premove geometry, drag/click input, arrows (drawn on release, cleared by left click) and colours.
-- Index cards show no move counts. The minimum is shown only on the puzzle page.
+- 5 worlds × 5 levels. Levels unlock one at a time, and a world can't be entered until every level of the previous world is completed. Each world has its own theme (meadow, forest, desert, frost, volcano) and mascot piece (pawn → queen).
+- World and level map cards show no move counts. The minimum is shown only on the puzzle page.
 - Playback waits 500 ms before White's first move and 1000 ms between moves.
 - "Perfect" means a win in ≤ the minimum number of premoves. It gets a gold card and a gold index tile with a ★.
 - Attempts are counted per player, locally. The site is static, so there are no global stats.
@@ -265,4 +296,6 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
 - Touch devices can't drag (HTML5 drag and drop) or draw arrows (no right click). Click-to-move works. A pointer-events drag implementation would fix both.
 - Possible next features: sound effects (a win chime was offered), showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects).
-- Progress is keyed by puzzle number (§4.5). If levels get reordered often, keying by a stable puzzle hash would be safer, but it would need a migration.
+- Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
+- The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
+- Map ideas not done: sound effects for unlocks and stamps, URL routing (browser Back currently leaves the app), touch-drag on maps is not needed (everything is click/tap).
