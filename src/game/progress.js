@@ -14,6 +14,8 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
   let completed = new Set();
   let perfected = new Set(); // solved in the minimum number of premoves
   let attempts = {}; // level id -> times a line was submitted
+  let wins = {}; // level id -> times it was solved (absent in older saves)
+  let firstWins = {}; // level id -> the attempt that first solved it (absent in older saves)
   const devUnlocked = new Set();
   let saved;
   try {
@@ -37,25 +39,32 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
       || !validIds(parsed.completedIds)
       || (parsed.perfectedIds !== undefined && !validIds(parsed.perfectedIds)) // absent in older saves
       || (parsed.attempts !== undefined && !validCounts(parsed.attempts)) // absent in older saves
+      || (parsed.wins !== undefined && !validCounts(parsed.wins)) // absent in older saves
+      || (parsed.firstWins !== undefined && !validCounts(parsed.firstWins)) // absent in older saves
     ) {
       throw new Error("Saved puzzle progress has an invalid format.");
     }
     completed = new Set(parsed.completedIds);
     perfected = new Set(parsed.perfectedIds ?? []);
     attempts = { ...(parsed.attempts ?? {}) };
+    wins = { ...(parsed.wins ?? {}) };
+    firstWins = { ...(parsed.firstWins ?? {}) };
   }
 
-  function save(next) {
+  function save(changes) {
+    const next = { completed, perfected, attempts, wins, firstWins, ...changes };
     try {
       storage.setItem(STORAGE_KEY, JSON.stringify({
         completedIds: [...next.completed],
         perfectedIds: [...next.perfected],
         attempts: next.attempts,
+        wins: next.wins,
+        firstWins: next.firstWins,
       }));
     } catch (error) {
       throw new Error("Unable to save puzzle progress.", { cause: error });
     }
-    ({ completed, perfected, attempts } = next);
+    ({ completed, perfected, attempts, wins, firstWins } = next);
   }
 
   function isCompleted(id) {
@@ -86,7 +95,10 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     return perfected.has(String(id));
   }
 
-  /** Record a win; `perfect` if it used the minimum number of premoves. */
+  /**
+   * Record a win; `perfect` if it used the minimum number of premoves. Every win is counted,
+   * and the first one remembers which attempt it came on (for the stats screen).
+   */
   function markCompleted(id, { perfect = false } = {}) {
     const levelId = String(id);
     if (!levelIds.includes(levelId)) {
@@ -95,15 +107,23 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     if (!isUnlocked(levelId)) {
       throw new Error(`Cannot complete locked level ${levelId}.`);
     }
-    if (completed.has(levelId) && (!perfect || perfected.has(levelId))) {
-      return;
-    }
-
+    const firstWin = !completed.has(levelId);
     save({
-      completed: new Set(completed).add(levelId),
-      perfected: perfect ? new Set(perfected).add(levelId) : perfected,
-      attempts,
+      completed: firstWin ? new Set(completed).add(levelId) : completed,
+      perfected: perfect && !perfected.has(levelId) ? new Set(perfected).add(levelId) : perfected,
+      wins: { ...wins, [levelId]: winCount(levelId) + 1 },
+      firstWins: firstWin ? { ...firstWins, [levelId]: Math.max(1, attemptCount(levelId)) } : firstWins,
     });
+  }
+
+  /** How many times the level has been solved (wins from before this was saved aren't known). */
+  function winCount(id) {
+    return wins[String(id)] ?? 0;
+  }
+
+  /** The attempt that first solved the level, or null if unsolved or solved before this was saved. */
+  function firstWinAttempt(id) {
+    return firstWins[String(id)] ?? null;
   }
 
   /** How many times a line has been submitted on this puzzle. */
@@ -117,7 +137,7 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     if (!levelIds.includes(levelId)) {
       throw new RangeError(`Unknown level: ${levelId}`);
     }
-    save({ completed, perfected, attempts: { ...attempts, [levelId]: attemptCount(levelId) + 1 } });
+    save({ attempts: { ...attempts, [levelId]: attemptCount(levelId) + 1 } });
     return attempts[levelId];
   }
 
@@ -153,6 +173,8 @@ export function createProgressStore(storage = globalThis.localStorage, { allowDe
     markCompleted,
     attemptCount,
     recordAttempt,
+    winCount,
+    firstWinAttempt,
     completedIds,
     perfectedIds,
   });

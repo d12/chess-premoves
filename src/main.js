@@ -9,10 +9,12 @@ import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { createProgressStore } from "./game/progress.js";
 import { getLevel, getStage, LEVELS, nextLevel, nextStage, STAGES } from "./game/stages.js";
+import { computeStats, loadSeenBadges, saveSeenBadges } from "./game/stats.js";
 import { renderScene, THEME_CONFETTI } from "./ui/scenery.js";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./ui/worlds.css";
+import "./ui/stats.css";
 
 const app = document.querySelector("#app");
 // Effects and music share one AudioContext; the music ducks under fanfares. In development
@@ -64,6 +66,13 @@ const state = {
   fresh: { unlockedLevel: null, hopFrom: null, clearedStage: null, unlockedStage: null },
   transitioning: false,
   musicPreview: null, // development sound board: { world, scene } to audition
+  // stats screen: which tab (narrow screens), where Back returns to (a stage id, or null for
+  // the world map), the one-shot intro flag, and the badges that are new this visit
+  statsTab: "overview",
+  statsReturn: null,
+  statsIntro: false,
+  statsNewBadges: new Set(),
+  seenBadges: null, // ids of earned badges already shown on the stats screen (lazy)
   puzzle: null,
   session: null,
   snapshot: null,
@@ -110,13 +119,37 @@ function renderHeader() {
         <span>PREMOVE</span>
       </button>
       <span class="topbar-status">
-        ${showStars ? `<span class="star-counter ${stars ? "has-stars" : ""}" title="Perfect solves" aria-label="${stars} of ${LEVELS.length} levels perfected"><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small></span>` : ""}
+        ${showStars ? renderStatsButton(stars) : ""}
         ${renderMusicToggle()}
         ${renderSoundToggle()}
         ${state.engine ? "" : `<span class="engine-pill"><span class="status-dot"></span>${engineStatus}</span>`}
       </span>
     </header>
   `;
+}
+
+// The star counter doubles as the way into the stats screen; a dot flags badges not yet seen.
+const TROPHY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 4h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 6H4.5v1.5A3.5 3.5 0 0 0 8 11M17 6h2.5v1.5A3.5 3.5 0 0 1 16 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10.5 14h3l.5 3.5h-4zM8 18h8v2.5H8z" fill="currentColor"/></svg>';
+function renderStatsButton(stars) {
+  const unseen = unseenBadgeCount();
+  const playing = state.snapshot?.phase === "playing";
+  return `<button class="star-counter ${stars ? "has-stars" : ""} ${unseen ? "has-new" : ""} ${state.screen === "stats" ? "is-current" : ""}" type="button" data-action="stats" ${playing ? "disabled" : ""}
+    title="Your stats" aria-label="Your stats: ${stars} of ${LEVELS.length} levels perfected${unseen ? `, ${plural(unseen, "new badge")}` : ""}">
+    <span class="star-counter-trophy">${TROPHY_ICON}</span><span aria-hidden="true">★</span> ${stars}<small>/${LEVELS.length}</small>
+  </button>`;
+}
+
+function seenBadges() {
+  state.seenBadges ??= loadSeenBadges();
+  return state.seenBadges;
+}
+
+function unseenBadgeCount() {
+  if (!state.progressStore) {
+    return 0;
+  }
+  const seen = seenBadges();
+  return computeStats(state.progressStore, STAGES).badges.filter((badge) => badge.earned && !seen.has(badge.id)).length;
 }
 
 const SPEAKER = '<path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="currentColor"/>';
@@ -535,6 +568,223 @@ function renderStage() {
   `;
 }
 
+// ---- Stats screen ----
+// The player's rank (a chess piece promoted world by world, drawn as a medallion with the
+// current world's scenery), counters, every world's levels and the badges. Three columns
+// when they fit; otherwise tabs, like a game menu. No move counts (owner's rule).
+const BADGE_ICONS = {
+  mate: '<text x="12" y="18" text-anchor="middle" font-size="17" font-family="Lilita One, Arial Rounded MT Bold, sans-serif" fill="currentColor">#</text>',
+  star: '<path d="M12 3.2l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.5l6-.8z" fill="currentColor"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="currentColor"/><circle cx="12" cy="12" r="3.6" fill="var(--badge-face, #fff)"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/>',
+  hat: '<path d="M6 9l1.2 2.4 2.6.4-1.9 1.8.5 2.6L6 14.9l-2.4 1.3.5-2.6-1.9-1.8 2.6-.4zM18 9l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4zM12 3.5l1.4 2.9 3.1.5-2.3 2.2.6 3.1L12 10.7l-2.8 1.5.6-3.1-2.3-2.2 3.1-.5z" fill="currentColor"/>',
+  flame: '<path d="M12 2.5c1 3.5 5.5 5.6 5.5 10.6A5.5 5.5 0 0 1 12 18.6a5.5 5.5 0 0 1-5.5-5.5c0-2.6 1.4-4.2 2.6-5.6.2 2 1 3 2 3.4-.4-2.8.4-5.6.9-8.4z" fill="currentColor"/><path d="M12 21.5a3 3 0 0 1-3-3c0-1.7 1.6-2.8 3-4.6 1.4 1.8 3 2.9 3 4.6a3 3 0 0 1-3 3z" fill="var(--badge-face, #fff)" opacity=".75"/>',
+  flag: '<path d="M6 3v18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M7.2 4.2h11l-2.6 4 2.6 4h-11z" fill="currentColor"/>',
+  gem: '<path d="M7 4h10l4 5-9 11L3 9z" fill="currentColor"/><path d="M3 9h18M9 4l-1.5 5L12 20l4.5-11L15 4" fill="none" stroke="var(--badge-face, #fff)" stroke-width="1.2" opacity=".6"/>',
+  stars: '<path d="M8.5 7l1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="currentColor"/><path d="M17 3l1.2 2.4 2.6.4-1.9 1.8.5 2.6L17 8.9l-2.4 1.3.5-2.6-1.9-1.8 2.6-.4z" fill="currentColor"/>',
+  trophy: '<path d="M7 3.5h10v5.5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 5.5H4v1.8a3.6 3.6 0 0 0 3.6 3.6M17 5.5h3v1.8a3.6 3.6 0 0 1-3.6 3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.4 13.8h3.2l.6 3.7h-4.4zM7.5 18h9v3h-9z" fill="currentColor"/>',
+  crown: '<path d="M3.5 8l4.2 3.6L12 5l4.3 6.6L20.5 8l-1.8 10H5.3z" fill="currentColor"/><path d="M5.3 19.8h13.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+};
+
+const STAT_ICONS = {
+  levels: '<path d="M5 20V5.5l7-2 7 2V20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M9 20v-5h6v5" fill="currentColor"/>',
+  stars: BADGE_ICONS.star,
+  attempts: '<path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M14.5 3.5h5v5z" fill="currentColor"/>',
+  first: BADGE_ICONS.eye,
+  rate: '<path d="M4 20h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M6 17v-4M10.7 17V9M15.3 17v-6M20 17V5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>',
+};
+
+const svgIcon = (paths) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
+
+function renderRankHint(rank) {
+  if (!rank.next) {
+    return "Every level perfect. The top rank is yours.";
+  }
+  const left = rank.toNext.goal - rank.toNext.done;
+  return rank.toNext.world
+    ? `Clear ${left === 1 ? "1 more level" : `${left} more levels`} in ${escapeHTML(rank.toNext.world.name)} to become a ${rank.next.name}.`
+    : `Perfect ${left === 1 ? "1 more level" : `${left} more levels`} to become a ${rank.next.name}.`;
+}
+
+function renderStatsOverview(stats) {
+  const { rank } = stats;
+  const theme = (rank.stage ?? STAGES.at(-1)).theme;
+  const pieceSrc = pieceImage("w", rank.piece);
+  const nextSrc = rank.next ? pieceImage("w", rank.next.piece) : null;
+  const fill = rank.toNext ? rank.toNext.done / rank.toNext.goal : 1;
+  const counters = [
+    ["levels", "Levels cleared", stats.cleared, `/${stats.totalLevels}`],
+    ["stars", "Stars", stats.stars, `/${stats.totalLevels}`],
+    ["attempts", "Attempts", stats.attempts, ""],
+    ["first", "First-try clears", stats.firstTryClears, ""],
+    ["rate", "Solve rate", stats.winRate === null ? null : Math.round(stats.winRate * 100), "%"],
+  ];
+  return `
+    <h2 class="stats-panel-title stats-rank-title">Rank <span>${rank.step + 1} of ${rank.ladder.length}</span></h2>
+    <div class="rank-card" data-theme="${theme}">
+      <div class="rank-crest ${rank.gold ? "is-gold" : ""}">
+        <span class="crest-medal">
+          <span class="crest-scene">${renderScene(theme)}</span>
+          ${pieceSrc ? `<img class="crest-piece" src="${escapeHTML(pieceSrc)}" alt="" draggable="false" />` : `<span class="crest-piece crest-glyph">${pieceSymbols.w[rank.piece]}</span>`}
+        </span>
+        <h2 class="rank-ribbon"><span class="visually-hidden">Your rank: </span>${rank.name}</h2>
+      </div>
+      <div class="rank-progress" role="progressbar" aria-label="Progress to the next rank" aria-valuemin="0" aria-valuemax="${rank.toNext?.goal ?? 1}" aria-valuenow="${rank.toNext?.done ?? 1}">
+        <span class="rank-track"><span class="rank-fill" style="--fill: ${fill}"></span></span>
+        ${nextSrc ? `<img class="rank-next" src="${escapeHTML(nextSrc)}" alt="" title="Next rank: ${rank.next.name}" draggable="false" />` : ""}
+      </div>
+      <p class="rank-hint">${renderRankHint(rank)}</p>
+    </div>
+    <ul class="stat-counters">
+      ${counters.map(([icon, label, value, suffix]) => `
+        <li class="stat-counter is-${icon}">
+          <span class="stat-icon">${svgIcon(STAT_ICONS[icon])}</span>
+          <span class="stat-label">${label}</span>
+          <span class="stat-value">${value === null ? "—" : `<strong data-count="${value}">${value}</strong>${suffix ? `<small>${suffix}</small>` : ""}`}</span>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderStatsWorlds(stats) {
+  return `
+    <h2 class="stats-panel-title">Worlds <span>${stats.worldsCleared} of ${stats.worlds.length} cleared</span></h2>
+    <ol class="world-records">
+      ${stats.worlds.map(({ stage, unlocked, cleared, perfected, completed, stars, levels }) => {
+        const mascot = pieceImage("w", stage.piece);
+        return `
+          <li class="world-record ${unlocked ? "" : "is-locked"} ${cleared ? "is-cleared" : ""} ${perfected ? "is-perfected" : ""}" data-theme="${stage.theme}">
+            <span class="record-mascot">${mascot ? `<img src="${escapeHTML(mascot)}" alt="" draggable="false" />` : pieceSymbols.w[stage.piece]}</span>
+            <span class="record-title">
+              <span class="record-name">${escapeHTML(stage.name)}</span>
+              <span class="record-score">${unlocked ? `${completed}/${levels.length} cleared${stars ? ` <span class="perfect-count">★ ${stars}</span>` : ""}` : "Locked"}</span>
+            </span>
+            <ol class="record-levels" aria-label="Levels of ${escapeHTML(stage.name)}">
+              ${levels.map((level) => {
+                const status = level.perfected ? "is-perfect" : level.completed ? "is-complete" : level.unlocked ? "is-ready" : "is-locked";
+                const face = level.perfected ? "★" : level.completed ? "✓" : level.unlocked ? level.number : LOCK_ICON;
+                const label = `Level ${level.id}: ${level.perfected ? "perfected" : level.completed ? "cleared" : level.unlocked ? "not cleared yet" : "locked"}, ${plural(level.attempts, "attempt")}${level.firstTry ? ", cleared first try" : ""}`;
+                return `
+                  <li class="record-level" title="${label}">
+                    <span class="record-node ${status}" aria-hidden="true">${face}</span>
+                    <span class="record-tries ${level.firstTry ? "is-first-try" : ""}" aria-hidden="true">${level.attempts ? (level.firstTry ? "1st try" : `${level.attempts} ${level.attempts === 1 ? "try" : "tries"}`) : "–"}</span>
+                    <span class="visually-hidden">${label}</span>
+                  </li>
+                `;
+              }).join("")}
+            </ol>
+          </li>
+        `;
+      }).join("")}
+    </ol>
+  `;
+}
+
+function renderStatsBadges(stats) {
+  const earnedCount = stats.badges.filter((badge) => badge.earned).length;
+  return `
+    <h2 class="stats-panel-title">Badges <span>${earnedCount} of ${stats.badges.length}</span></h2>
+    <ul class="badge-grid">
+      ${stats.badges.map((badge) => {
+        const fresh = badge.earned && state.statsNewBadges.has(badge.id);
+        return `
+          <li class="badge ${badge.earned ? "is-earned" : "is-locked"} ${fresh ? "is-new" : ""}" data-badge="${badge.id}">
+            <span class="badge-medal">${svgIcon(BADGE_ICONS[badge.icon])}</span>
+            <span class="badge-text">
+              <strong class="badge-name">${badge.name}${fresh ? ' <span class="badge-new">New</span>' : ""}</strong>
+              <span class="badge-how">${badge.how}</span>
+              ${!badge.earned && badge.goal > 1 ? `<span class="badge-progress" aria-label="${badge.progress} of ${badge.goal}"><span style="--fill: ${badge.progress / badge.goal}"></span><em>${badge.progress}/${badge.goal}</em></span>` : ""}
+            </span>
+            <span class="visually-hidden">${badge.earned ? "Earned" : "Not earned yet"}</span>
+          </li>
+        `;
+      }).join("")}
+    </ul>
+  `;
+}
+
+function renderStats() {
+  const stats = computeStats(state.progressStore, STAGES);
+  const panels = [
+    ["overview", "Overview", renderStatsOverview(stats)],
+    ["worlds", "Worlds", renderStatsWorlds(stats)],
+    ["badges", "Badges", renderStatsBadges(stats)],
+  ];
+  const intro = state.statsIntro;
+  return `
+    ${renderHeader()}
+    <main class="stats-screen ${intro ? "is-intro" : ""}">
+      <div class="stats-heading">
+        <button class="back-button round-back" type="button" data-action="stats-back" aria-label="Back"><span aria-hidden="true">←</span><span class="back-label">Back</span></button>
+        <h1>Your record</h1>
+        <div class="stats-tabs" role="tablist" aria-label="Stats">
+          ${panels.map(([id, label]) => `
+            <button class="stats-tab ${state.statsTab === id ? "is-active" : ""}" type="button" role="tab" id="stats-tab-${id}" aria-controls="stats-panel-${id}" aria-selected="${state.statsTab === id}" tabindex="${state.statsTab === id ? 0 : -1}" data-action="stats-tab" data-tab="${id}">
+              ${label}${id === "badges" && state.statsNewBadges.size ? '<span class="tab-dot" aria-label="new"></span>' : ""}
+            </button>
+          `).join("")}
+        </div>
+      </div>
+      <div class="stats-body">
+        ${panels.map(([id, label, html]) => `
+          <section class="stats-panel stats-${id} scroll-area ${state.statsTab === id ? "is-active" : ""}" id="stats-panel-${id}" role="tabpanel" aria-labelledby="stats-tab-${id}" aria-label="${label}">
+            ${html}
+          </section>
+        `).join("")}
+      </div>
+    </main>
+  `;
+}
+
+// Opening the stats screen: the medal pops, the ribbon stamps, the counters count up and the
+// rank bar fills, once. Badges earned since the last visit are marked new for this visit.
+function openStats() {
+  if (!state.progressStore || state.snapshot?.phase === "playing") {
+    return;
+  }
+  const returnTo = state.screen === "stage" || state.screen === "puzzle" ? state.stage?.id ?? null : null;
+  const seen = seenBadges();
+  const earned = computeStats(state.progressStore, STAGES).badges.filter((badge) => badge.earned).map((badge) => badge.id);
+  navigate(() => {
+    clearPuzzle();
+    state.statsReturn = returnTo;
+    state.statsTab = "overview";
+    state.statsIntro = true;
+    state.statsNewBadges = new Set(earned.filter((id) => !seen.has(id)));
+    state.seenBadges = new Set([...seen, ...earned]);
+    saveSeenBadges(state.seenBadges);
+    state.screen = "stats";
+  });
+}
+
+function leaveStats() {
+  if (state.statsReturn) {
+    openStage(state.statsReturn);
+  } else {
+    openWorldMap();
+  }
+}
+
+function countUpStats() {
+  for (const element of app.querySelectorAll(".stats-screen [data-count]")) {
+    const target = Number(element.dataset.count);
+    if (!target || prefersReducedMotion()) {
+      continue;
+    }
+    const started = performance.now();
+    const duration = 750;
+    const tick = (now) => {
+      const t = Math.min(1, (now - started) / duration);
+      element.textContent = String(Math.round(target * (1 - (1 - t) ** 3)));
+      if (t < 1 && element.isConnected) {
+        requestAnimationFrame(tick);
+      }
+    };
+    element.textContent = "0";
+    requestAnimationFrame(tick);
+  }
+}
+
 function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
   const board = boardRows(fen); // planning previews may not be legal chess positions
   const premoveSquares = new Set(premoves.flatMap((move) => [move.from, move.to]));
@@ -926,8 +1176,14 @@ function render() {
     app.innerHTML = renderStage();
   } else if (state.screen === "puzzle") {
     app.innerHTML = renderPuzzle();
+  } else if (state.screen === "stats") {
+    app.innerHTML = renderStats();
   } else if (state.screen === "sounds" && import.meta.env.DEV) {
     app.innerHTML = renderSoundBoard();
+  }
+  if (state.screen === "stats" && state.statsIntro) {
+    state.statsIntro = false;
+    countUpStats();
   }
 
   const moveList = app.querySelector(".move-list-wrap");
@@ -987,7 +1243,7 @@ function syncHistory() {
   if (!window.history?.pushState) {
     return;
   }
-  const inside = state.screen === "stage" || state.screen === "puzzle" || state.screen === "sounds";
+  const inside = state.screen === "stage" || state.screen === "puzzle" || state.screen === "sounds" || state.screen === "stats";
   if (inside && !historyEntry) {
     history.pushState({ premove: "in-game" }, "");
     historyEntry = true;
@@ -1010,6 +1266,9 @@ function goBack() {
       sounds.play("back");
       openStage(state.level.stageId);
     }
+  } else if (state.screen === "stats") {
+    sounds.play("back");
+    leaveStats();
   } else if (state.screen === "stage" || state.screen === "sounds") {
     sounds.play("back");
     openWorldMap();
@@ -1418,6 +1677,21 @@ app.addEventListener("click", (event) => {
       openLevel(actionElement.dataset.levelId);
     } else if (action === "toggle-sound") {
       toggleSound();
+    } else if (action === "stats") {
+      if (state.screen !== "stats") {
+        sounds.play("open");
+        openStats();
+      }
+    } else if (action === "stats-back") {
+      sounds.play("back");
+      leaveStats();
+    } else if (action === "stats-tab") {
+      if (state.statsTab !== actionElement.dataset.tab) {
+        sounds.play("click");
+        state.statsTab = actionElement.dataset.tab;
+        render();
+        app.querySelector(`#stats-tab-${state.statsTab}`)?.focus();
+      }
     } else if (action === "sound-board" && import.meta.env.DEV) {
       sounds.play("open");
       navigate(() => {
@@ -1759,6 +2033,14 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.screen === "stage") {
     sounds.play("back");
     openWorldMap();
+  } else if (event.key === "Escape" && state.screen === "stats") {
+    sounds.play("back");
+    leaveStats();
+  } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && event.target.closest?.(".stats-tab")) {
+    // arrow keys move between the stats tabs, as in any tab list
+    const tabs = [...app.querySelectorAll(".stats-tab")];
+    const next = tabs[(tabs.indexOf(event.target.closest(".stats-tab")) + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    next?.click();
   } else if ((event.key === "m" || event.key === "M") && state.engine && !event.target.closest?.("input, textarea, select")) {
     toggleSound();
   }
