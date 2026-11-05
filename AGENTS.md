@@ -339,7 +339,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
-  - `tutorial`: the position and guided steps, the line beats the opponent (perfect) and no 1- or 2-premove plan does (3-premove plans were brute-forced once offline: 32,534 plans, none sound), the tutorial-done store, veterans skipping it, broken storage not locking the game
+  - `tutorial`: the position and guided steps, the line beats the opponent (perfect) and no 1- or 2-premove plan does (3-premove plans were brute-forced once offline: 31,502 plans, none sound), the tutorial-done store, veterans skipping it, broken storage not locking the game
   - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)
 - **`main.js` has no unit tests.** That is how a `ReferenceError` that froze every win reached production (PR #9). After any UI change, **drive the real page in a headless browser.** What has worked:
   - Start `npx vite --port <p> --strictPort` in the background, then use Puppeteer or Playwright with Chromium.

@@ -61,7 +61,7 @@ test("the ladder mate beats the premove opponent, and nothing shorter does",
     assert.equal(result.outcome, "victory");
     assert.equal(result.perfect, true);
 
-    // every plan of one or two premoves fails (three were checked offline: 32,534 plans, none sound)
+    // every plan of one or two premoves fails (three were checked offline: 31,502 plans, none sound)
     const squares = [..."abcdefgh"].flatMap((file) => [1, 2, 3, 4, 5, 6, 7, 8].map((rank) => `${file}${rank}`));
     const plans = (prefix) => {
       const preview = createPremoveGame(TUTORIAL_PUZZLE);
