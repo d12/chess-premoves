@@ -384,6 +384,14 @@ p {
   cursor: pointer;
 }
 
+/* the arrow (BACK_ICON in main.js): an SVG scaled with the button's text, centred by the flexbox */
+.back-icon {
+  width: 1.3em;
+  height: 1.3em;
+  flex: none;
+  display: block;
+}
+
 @media (hover: hover) {
   .back-button:hover:not(:disabled) {
     color: #263322;
