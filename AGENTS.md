@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stats-screen PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 86 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the View-on-chess.com PR (5 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, a "View on chess.com" link after a win, and 88 passing tests.
 
 ---
 
@@ -52,6 +52,7 @@ src/
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
     stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
+    links.js              links out of the game: chessComAnalysisUrl(fen), the same URL ppz prints
     puzzles.json          the levels (written by `ppz app`)
     puzzles.js            frozen PUZZLES list + getPuzzle(id)
     stages.json           the world/level layout: which puzzle each level uses (hand-edited)
@@ -219,6 +220,7 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
 - **Move list during playback** (`premoveStatus`/`renderPremoves`, from `premovesPlayed` and `failedPremove`): the premove just played is lit in the world's accent colour (`is-current`, `aria-current="step"`, a small pop as it lands), earlier ones get a ✓ (`is-played`), later ones are dimmed (`is-upcoming`). At the result the mating move turns gold with a `#` (`is-winning`), a premove that became illegal is red and struck through with ✕ (`is-failed`), and premoves never needed because mate came first are faded (`is-unused`). Each carries a visually hidden status for screen readers. The list scrolls itself (`keepCurrentPremoveVisible`) to keep the current premove in view, in both the horizontal strip and the vertical list.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
+- **View on chess.com** (wins only, perfect or not; not on defeats, while planning or during playback): a small pill at the end of the result card's heading row (`.outcome-heading`, `renderChessComLink`), linking to chess.com's analysis board for the level's **starting** FEN. The URL comes from `chessComAnalysisUrl` in `game/links.js` and matches `ppz`'s `chesscom_url` (Python `quote_plus`: `/` → `%2F`, space → `+`). It opens in a new tab (`target="_blank" rel="noopener noreferrer"`) and plays `click`. It sits in the heading row rather than among the buttons so the card doesn't gain a row and the board keeps its size; the pill is 24 px tall with a 34 px tap target (`::after`), and below a 260 px heading (`@container outcome-heading`) it shortens to "chess.com ↗".
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
 ### 4.7b Layout and responsiveness
@@ -318,7 +320,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 86 tests in 12 files, about 25 s.
+- `npm test`: 88 tests in 13 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
@@ -328,6 +330,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
+  - `links`: the chess.com URL matches ppz's output, and every level's FEN round-trips through it
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
   - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)
