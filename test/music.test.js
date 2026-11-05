@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  barAt, barSeconds, createMusicPlayer, degreeToMidi, DUCKS, MUSIC_GAIN, parseToken, passBars, passSeconds, REST_BARS, sceneGains, SCENES, scheduleRange, SONGS,
+  barAt, barSeconds, createMusicPlayer, degreeToMidi, DUCKS, MUSIC_GAIN, parseToken, passBars, passSeconds, REST_BARS, sceneGains, sceneLevel, SCENES, sceneTone, scheduleRange, SONGS,
 } from "../src/effects/music.js";
 import { SOUND_NAMES } from "../src/effects/sound.js";
 
@@ -137,6 +137,20 @@ test("degrees map to notes in each world's key and scale", () => {
     }
   }
   assert.ok(sceneGains("forest", "map").perc > 0 && sceneGains("meadow", "map").perc === 0, "signature percussion per world");
+  // the tune plays in levels too: softer and muffled while planning, the full band while playing
+  for (const world of WORLDS) {
+    const map = sceneGains(world, "map");
+    const planning = sceneGains(world, "planning");
+    const playing = sceneGains(world, "playing");
+    assert.ok(planning.lead > 0 && planning.bass > 0 && planning.kick > 0, `${world}: planning keeps the melody and groove`);
+    for (const layer of ["lead", "counter", "bass", "comp", "kick", "snare", "hat"]) {
+      assert.ok(planning[layer] < map[layer], `${world}: planning eases back the ${layer}`);
+      assert.ok(playing[layer] >= planning[layer], `${world}: playing is at least as full as planning (${layer})`);
+    }
+    assert.ok(playing.lead === map.lead && playing.snare > 0 && playing.perc > 0, `${world}: playing is the full band plus percussion`);
+  }
+  assert.ok(sceneLevel("planning") < sceneLevel("playing") && sceneLevel("playing") <= sceneLevel("map"), "planning is the quietest scene");
+  assert.ok(sceneTone("planning") < sceneTone("map") && sceneTone("playing") === sceneTone("map"), "planning is muffled, playing opens up");
   for (const name of Object.keys(DUCKS)) {
     assert.ok(SOUND_NAMES.includes(name), `ducks under a real sound: ${name}`);
   }
@@ -147,7 +161,7 @@ test("scheduling fills the window with bars, only into layers that are on", () =
     const context = fakeContext();
     const layers = Object.fromEntries(Object.keys(SCENES.map).map((name) => [name, context.createGain()]));
     const length = barSeconds(world);
-    for (const scene of ["map", "planning"]) {
+    for (const scene of ["map", "planning", "playing"]) {
       context.log.starts.length = 0;
       const gains = sceneGains(world, scene);
       const result = scheduleRange({
@@ -169,10 +183,9 @@ test("scheduling fills the window with bars, only into layers that are on", () =
       for (const name of used) {
         assert.ok(gains[name] > 0, `${world} ${scene}: no notes for the muted ${name} layer`);
       }
-      if (scene === "map") {
-        assert.ok(used.has("lead") && used.has("bass"), `${world}: the band plays on the map`);
-      } else {
-        assert.ok(used.has("pad") && !used.has("lead") && !used.has("kick"), `${world}: planning drops the melody and kick`);
+      assert.ok(used.has("lead") && used.has("bass"), `${world} ${scene}: the tune and the band play`);
+      if (scene === "playing") {
+        assert.ok(used.has("perc") && !used.has("pad"), `${world}: playing brings in the percussion, without the pad`);
       }
     }
   }

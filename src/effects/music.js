@@ -19,8 +19,12 @@
 //   matches how the game moves, and it must not overpower the sound effects: the music sits
 //   about 10 dB under them, is band-limited, and ducks under fanfares.
 // * Vertical layering. Like Yoshi's bongos, layers come and go with what the player is doing
-//   while the piece keeps going: the full band on the maps; while planning, the melody and kick
-//   drop out (a quieter, thinking texture); while a line plays out, extra percussion comes in.
+//   while the piece keeps going: the full band on the maps. A level is where the player spends
+//   their time, so the tune keeps playing there too: while planning, the whole piece goes on a
+//   little softer and behind a low-pass filter (the "muffled" music games use behind a menu),
+//   with the backbeat and pad eased back, so it keeps you company without pulling focus; when
+//   the line plays out, the filter opens and the full band and the world's percussion come in:
+//   the payoff.
 // * Fighting loop fatigue. Each piece runs about 1:45 to 2:35; the second pass varies (the
 //   last A lifted an octave, a harmony line, fills), and after two passes the music rests
 //   before starting again.
@@ -70,12 +74,12 @@ function chordMidis(song, root, shift = 0) {
 // ---- the songs ------------------------------------------------------------------------------
 
 // Layers (gain nodes the scenes fade): lead and counter melodies, bass, comp (chords), drums,
-// perc (the world's signature percussion), pad (planning), amb (ambience: crickets, wind…).
+// perc (the world's signature percussion), pad (a soft bed under planning), amb (ambience: crickets, wind…).
 const LAYERS = ["lead", "counter", "bass", "comp", "kick", "snare", "hat", "perc", "pad", "amb"];
 const DEFAULT_SCENES = {
   map: { lead: 1, counter: 1, bass: 1, comp: 1, kick: 1, snare: 1, hat: 1, perc: 0, pad: 0, amb: 1 },
-  planning: { lead: 0, counter: 0.6, bass: 0.7, comp: 0.55, kick: 0, snare: 0, hat: 0.6, perc: 0, pad: 1, amb: 1 },
-  playing: { lead: 0, counter: 0.5, bass: 0.9, comp: 0.75, kick: 0.9, snare: 0, hat: 0.8, perc: 1, pad: 0.7, amb: 1 },
+  planning: { lead: 0.7, counter: 0.5, bass: 0.85, comp: 0.7, kick: 0.6, snare: 0.35, hat: 0.5, perc: 0, pad: 0.3, amb: 1 },
+  playing: { lead: 1, counter: 0.9, bass: 1, comp: 0.9, kick: 1, snare: 1, hat: 1, perc: 1, pad: 0, amb: 1 },
 };
 export const SCENES = Object.freeze(DEFAULT_SCENES);
 
@@ -392,8 +396,16 @@ export function sceneGains(world, scene) {
 
 // Overall music level (after the mixer): roughly 10 dB under the effects on the maps.
 export const MUSIC_GAIN = 0.34;
-// The planning scene also turns the whole band down a little.
-const SCENE_LEVEL = { map: 1, planning: 0.72, playing: 0.85 };
+// Each scene's overall level and tone (the music bus's low-pass cutoff, Hz). Planning is a
+// little quieter and muffled; playing is as loud and bright as the map (its extra percussion
+// is offset by a slightly lower level).
+const SCENE_MIX = Object.freeze({
+  map: { level: 1, tone: 4800 },
+  planning: { level: 0.82, tone: 2600 },
+  playing: { level: 0.92, tone: 4800 },
+});
+export const sceneLevel = (scene) => SCENE_MIX[scene].level;
+export const sceneTone = (scene) => SCENE_MIX[scene].tone;
 
 // ---- timeline -------------------------------------------------------------------------------
 
@@ -997,17 +1009,17 @@ export function createMusicPlayer({ audio, storage = globalThis.localStorage, ti
     // band-limit the music so effects' attacks and the pieces' "thock" stay in front
     const lowpass = context.createBiquadFilter();
     lowpass.type = "lowpass";
-    lowpass.frequency.value = 4800;
+    lowpass.frequency.value = sceneTone(scene);
     const highpass = context.createBiquadFilter();
     highpass.type = "highpass";
     highpass.frequency.value = 55;
     bus.connect(duck).connect(lowpass).connect(highpass).connect(musicInput);
-    graph = { context, bus, duck };
+    graph = { context, bus, duck, lowpass };
     return graph;
   }
 
   const audible = () => enabled && started && !hidden;
-  const level = () => (audible() ? MUSIC_GAIN * SCENE_LEVEL[scene] * (SONGS[world]?.level ?? 1) : 0);
+  const level = () => (audible() ? MUSIC_GAIN * sceneLevel(scene) * (SONGS[world]?.level ?? 1) : 0);
 
   function tick() {
     if (!run) return;
@@ -1049,6 +1061,7 @@ export function createMusicPlayer({ audio, storage = globalThis.localStorage, ti
       timer: timers.setInterval(tick, 100),
     };
     ramp(bus.gain, context.currentTime, level(), 0.3);
+    ramp(graph.lowpass.frequency, context.currentTime, sceneTone(scene), 0.3);
     tick();
   }
 
@@ -1093,6 +1106,7 @@ export function createMusicPlayer({ audio, storage = globalThis.localStorage, ti
             ramp(run.layers[layer].gain, now, sceneGains(run.world, scene)[layer], 0.35);
           }
           ramp(graph.bus.gain, now, level(), 0.5);
+          ramp(graph.lowpass.frequency, now, sceneTone(scene), 0.5);
         }
       }
       if (SONGS[nextWorld] && nextWorld !== world) {
