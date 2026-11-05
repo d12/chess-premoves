@@ -143,6 +143,9 @@ function renderHeader() {
 }
 
 // The star counter doubles as the way into the stats screen; a dot flags badges not yet seen.
+// The back buttons' arrow. An SVG rather than "←": no loaded font has that glyph, so phones
+// drew it from a system font, small and sitting on the baseline instead of centred.
+const BACK_ICON = '<svg class="back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5.5M11.5 5.5 5 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const TROPHY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 4h10v5a5 5 0 0 1-10 0z" fill="currentColor"/><path d="M7 6H4.5v1.5A3.5 3.5 0 0 0 8 11M17 6h2.5v1.5A3.5 3.5 0 0 1 16 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10.5 14h3l.5 3.5h-4zM8 18h8v2.5H8z" fill="currentColor"/></svg>';
 function renderStatsButton(stars) {
   const unseen = unseenBadgeCount();
@@ -432,7 +435,7 @@ function renderSoundBoard() {
   return `
     ${renderHeader()}
     <main class="sound-board scroll-area">
-      <button class="back-button" type="button" data-action="home"><span aria-hidden="true">←</span> All worlds</button>
+      <button class="back-button" type="button" data-action="home">${BACK_ICON} All worlds</button>
       <h1>Sound board</h1>
       <p class="sound-board-copy">Every effect, synthesized live by <code>src/effects/sound.js</code>. Board sounds also have an opponent variant.${sounds.isMuted() ? " Sound is muted: press M to hear them." : ""}</p>
       <section>
@@ -570,7 +573,7 @@ function renderStage() {
     ${renderHeader()}
     <main class="stage-screen" data-theme="${stage.theme}">
       <div class="stage-heading">
-        <button class="back-button round-back" type="button" data-action="home" aria-label="All worlds"><span aria-hidden="true">←</span><span class="back-label">All worlds</span></button>
+        <button class="back-button round-back" type="button" data-action="home" aria-label="All worlds">${BACK_ICON}<span class="back-label">All worlds</span></button>
         <div class="stage-title">
           <p class="world-number">World ${stage.id}</p>
           <h1>${escapeHTML(stage.name)}</h1>
@@ -750,7 +753,7 @@ function renderStats() {
     ${renderHeader()}
     <main class="stats-screen ${intro ? "is-intro" : ""}">
       <div class="stats-heading">
-        <button class="back-button round-back" type="button" data-action="stats-back" aria-label="Back"><span aria-hidden="true">←</span><span class="back-label">Back</span></button>
+        <button class="back-button round-back" type="button" data-action="stats-back" aria-label="Back">${BACK_ICON}<span class="back-label">Back</span></button>
         <h1>Your record</h1>
         <div class="stats-tabs" role="tablist" aria-label="Stats">
           ${panels.map(([id, label]) => `
@@ -1186,7 +1189,7 @@ function renderPuzzle() {
       <div class="game-layout" ${hasCoach() && state.coachPanelHeight ? `style="--coach-panel: ${state.coachPanelHeight}px"` : ""}>
         ${state.tutorial ? renderTutorialHeading() : `<div class="puzzle-heading">
           <button class="back-button" type="button" data-action="open-stage" data-stage-id="${stage.id}" aria-label="Back to ${escapeHTML(stage.name)}" ${snapshot.phase === "playing" ? "disabled" : ""}>
-            <span aria-hidden="true">←</span> <span class="back-label">${escapeHTML(stage.name)}</span>
+            ${BACK_ICON} <span class="back-label">${escapeHTML(stage.name)}</span>
           </button>
           <p class="level-kicker">
             <span class="level-badge">${state.level.id}</span>
@@ -1251,7 +1254,7 @@ function renderTutorialHeading() {
   return `
     <div class="puzzle-heading">
       <button class="back-button" type="button" data-action="home" aria-label="Back to the world map" ${state.snapshot.phase === "playing" ? "disabled" : ""}>
-        <span aria-hidden="true">←</span> <span class="back-label">All worlds</span>
+        ${BACK_ICON} <span class="back-label">All worlds</span>
       </button>
       <p class="level-kicker">
         <span class="level-badge tutorial-badge" aria-hidden="true">?</span>
