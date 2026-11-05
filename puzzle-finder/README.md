@@ -164,7 +164,9 @@ position, verifies the solution independently, refuses positions that are alread
 another level (including mirror images; `--allow-duplicate` overrides), and stores `fen`,
 `number_of_moves`, `solution` (SAN) and `solution_uci`. Title and description are generated
 (e.g. "Rook and bishop vs king", "Plan the forced premove mate in four, ...") unless you
-pass `--title` / `--description`. `--yes` skips the confirmation. Then run `npm test` at the
+pass `--title` / `--description`. The description is the level's message: in the game the
+world's mascot says it in a speech bubble while the player plans, so it's the place for a bit
+of story or a hint. `--yes` skips the confirmation. Then run `npm test` at the
 repo root: it checks every world-level is present once and every puzzle plays correctly in
 the game. There is no `remove`: a level can't be left empty, so replace its puzzle instead.
 Adding a world or a level is a hand edit of `src/game/stages.json` and `puzzles.json` plus

@@ -652,7 +652,8 @@ def main(argv=None):
                     help="with add: the world-level to put the puzzle in, e.g. 3-2 (replaces what is there)")
     ap.add_argument("--from-db", type=int, metavar="K", help="with add: take puzzle K from `ppz db list`")
     ap.add_argument("--title", help="default: generated from the material, e.g. 'Rook and bishop vs king'")
-    ap.add_argument("--description", help="default: 'Plan the forced premove mate in N, ...'")
+    ap.add_argument("--description", help="the level's message, said by the world's mascot in the game while the "
+                    "player plans (default: 'Plan the forced premove mate in N, ...')")
     ap.add_argument("--solutions", action="store_true", help="with list: show solutions")
     ap.add_argument("--allow-duplicate", action="store_true")
     ap.add_argument("--max-moves", type=int, default=10)

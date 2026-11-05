@@ -1,0 +1,214 @@
+/* ---------- The coach ----------
+   A narrator at the top of the puzzle panel: a piece in a round frame with a speech bubble.
+   The tutorial's pawn guides each step; on every level, the world's mascot says the level's
+   message (its description in puzzles.json) while you plan. A nudge (an illegal or unwanted
+   move) takes the title's place. Colours come from the world's [data-theme] tokens. */
+
+.control-panel.has-coach .panel-top {
+  display: none !important;
+}
+
+/* The panel holds the coach as well as the tray, so on portrait screens its row reserves
+   exactly what the planning panel needs (--coach-panel, measured by fitCoachPanel in main.js;
+   240px until then), even past the usual 36% cap: the board keeps one size from planning
+   through playback (no coach) to the result. */
+.puzzle-screen.has-coach .game-layout {
+  --panel-reserve: var(--coach-panel, 240px);
+  --panel-cap: 100cqh;
+}
+
+.coach {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.coach-avatar {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--accent, #4f9a36);
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--sky-top, #74c6ef), var(--sky-bottom, #d4f0ff));
+  font-size: 1.4rem;
+}
+
+.coach-avatar img {
+  width: 82%;
+  margin-top: 14%;
+  display: block;
+}
+
+/* the real line and invisible copies of every other the coach can say, in one cell */
+.coach-stack {
+  display: grid;
+}
+
+.coach-stack > * {
+  grid-area: 1 / 1;
+}
+
+.coach-sizer {
+  visibility: hidden;
+}
+
+.coach-bubble {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  border-radius: 12px;
+  background: var(--accent-soft, #e2f2d6);
+}
+
+/* the bubble's tail, pointing at the narrator */
+.coach-bubble::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  background: var(--accent-soft, #e2f2d6);
+  rotate: 45deg;
+}
+
+.coach-title {
+  margin: 0;
+  color: var(--accent-ink, #1f4714);
+  font-family: var(--font-game);
+  font-size: 0.98rem;
+  line-height: 1.15;
+}
+
+.coach-title.is-nudge {
+  color: #b23a2a;
+  animation: nudge-shake 320ms ease-in-out;
+}
+
+@keyframes nudge-shake {
+  25% { translate: -3px 0; }
+  75% { translate: 3px 0; }
+}
+
+.coach-text {
+  margin: 1px 0 0;
+  color: var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.38;
+}
+
+@container puzzle (min-aspect-ratio: 5/4) or ((min-aspect-ratio: 9/8) and (min-height: 300px)) or ((min-aspect-ratio: 27/25) and (min-height: 700px)) {
+  /* beside the board the panel's height can't resize the board, so the coach fits its line */
+  .coach-sizer {
+    display: none;
+  }
+
+  .coach {
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .coach-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .coach-bubble {
+    padding: 10px 14px 12px;
+    border-radius: 14px;
+  }
+
+  .coach-bubble::before {
+    top: 18px;
+  }
+
+  .coach-title {
+    font-size: 1.25rem;
+  }
+
+  .coach-text {
+    margin-top: 3px;
+    font-size: 0.86rem;
+    line-height: 1.5;
+  }
+
+  /* phones on their side: the coach, the tray and Done/Undo share a short column, so the
+     narrator steps aside to give the words the width */
+  @container puzzle (max-height: 560px) {
+    .control-panel.has-coach {
+      gap: 8px;
+    }
+
+    .coach {
+      margin-bottom: 0;
+    }
+
+    .coach-avatar,
+    .coach-bubble::before {
+      display: none;
+    }
+
+    .coach-title {
+      font-size: 0.92rem;
+    }
+
+    .control-panel.has-coach:not(.is-complete) .premove-tray {
+      --tile-w: 48px;
+      --tile-h: 52px;
+    }
+
+    .coach-bubble {
+      padding: 6px 10px 7px;
+    }
+
+    .coach-bubble::before {
+      top: 12px;
+    }
+
+    .coach-text {
+      font-size: 0.72rem;
+      line-height: 1.32;
+    }
+  }
+}
+
+/* short portrait phones: every pixel the panel takes comes off the board, so the coach slims
+   down as on phones held sideways: no narrator frame, tighter bubble, smaller text */
+@container puzzle (max-height: 640px) and (max-aspect-ratio: 9/8) {
+  .coach {
+    margin-bottom: 0;
+  }
+
+  .coach-avatar,
+  .coach-bubble::before {
+    display: none;
+  }
+
+  .coach-bubble {
+    padding: 5px 10px 6px;
+  }
+
+  .coach-title {
+    font-size: 0.9rem;
+  }
+
+  .coach-text {
+    font-size: 0.72rem;
+    line-height: 1.32;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-title.is-nudge {
+    animation: none;
+  }
+}
