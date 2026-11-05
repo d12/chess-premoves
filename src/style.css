@@ -729,6 +729,7 @@ p {
   background: transparent;
 }
 
+
 @media (hover: hover) {
   .primary-button:hover:not(:disabled) {
     background: #46663a;
@@ -769,6 +770,75 @@ p {
   margin: 0 0 2px;
   font-size: 1.05rem;
   letter-spacing: -0.035em;
+}
+
+/* the result's heading, with "View on chess.com" at its end after a win */
+.outcome-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 8px;
+  container: outcome-heading / inline-size;
+}
+
+/* a small pill beside the heading, so the card (and so the board) keeps its size;
+   the ::after stretches the tap target to 34px */
+.chesscom-link {
+  position: relative;
+  min-height: 24px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-block: -2px;
+  padding: 0 9px;
+  border: 1px solid rgba(52, 67, 45, 0.16);
+  border-radius: 999px;
+  color: #4f5b49;
+  background: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-user-drag: none;
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.chesscom-link::after {
+  content: "";
+  position: absolute;
+  inset: -5px -4px;
+}
+
+.chesscom-link:active {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.chesscom-link:focus-visible {
+  outline: 3px solid #6f9558;
+  outline-offset: 2px;
+}
+
+.chesscom-link .external-icon {
+  font-size: 0.85em;
+}
+
+/* narrow cards: just "chess.com ↗" so it stays on the heading's line */
+@container outcome-heading (max-width: 260px) {
+  .chesscom-link-verb {
+    display: none;
+  }
+}
+
+@media (hover: hover) {
+  .chesscom-link:hover {
+    border-color: rgba(52, 67, 45, 0.32);
+    color: #273323;
+    background: #fff;
+  }
 }
 
 .outcome-card > p:not(.eyebrow) {

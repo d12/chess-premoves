@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the world-level puzzles PR (4 Nov 2026): 5 worlds × 5 levels with one `puzzles.json` entry per world-level (still only 5 distinct positions, each repeated across its world), synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, a premove tray with playback highlighting, a stats screen, and 88 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the View-on-chess.com PR (5 Nov 2026): 5 worlds × 5 levels with one `puzzles.json` entry per world-level (still only 5 distinct positions, each repeated across its world), synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, a premove tray with playback highlighting, a stats screen, a "View on chess.com" link after a win, and 90 passing tests.
 
 ---
 
@@ -53,6 +53,7 @@ src/
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
     stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
+    links.js              links out of the game: chessComAnalysisUrl(fen), the same URL ppz prints
     puzzles.json          one puzzle per level, ids "1-1"…"5-5" in play order (written by `ppz app`)
     puzzles.js            frozen PUZZLES list + getPuzzle(id), parseLevelId("3-2")
     stages.json           each world's display data: name, tagline, theme, mascot (hand-edited)
@@ -227,6 +228,7 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order, with display 
   - **Playback** (`premoveStatus`, from `premovesPlayed` and `failedPremove`): the tile being played lights up in the world's accent and pops (`is-current`, `aria-current="step"`), played ones get a ✓ (`is-played`), later ones dim (`is-upcoming`). At the result the mating tile turns gold with `#` (`is-winning`), an illegal one is red, struck through, with ✕ (`is-failed`), and moves never needed fade (`is-unused`). At the result the tiles shrink to a mini row under the result card. The tray scrolls itself (`keepCurrentPremoveVisible`) to keep the current tile in view.
   - **Layouts:** portrait phones, a single row that scrolls sideways if long; tablets in portrait (≥ 560 wide), tray and buttons in one row; wide layout, a content-sized side panel with bigger tiles that wrap; phones on their side, compact sizes and one row. On short portrait phones (≤ 640 tall) the line hides once the result card shows.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
+- **View on chess.com** (wins only, perfect or not; not on defeats, while planning or during playback): a small pill at the end of the result card's heading row (`.outcome-heading`, `renderChessComLink`), linking to chess.com's analysis board for the level's **starting** FEN. The URL comes from `chessComAnalysisUrl` in `game/links.js` and matches `ppz`'s `chesscom_url` (Python `quote_plus`: `/` → `%2F`, space → `+`). It opens in a new tab (`target="_blank" rel="noopener noreferrer"`) and plays `click`. It sits in the heading row rather than among the buttons so the card doesn't gain a row and the board keeps its size; the pill is 24 px tall with a 34 px tap target (`::after`), and below a 260 px heading (`@container outcome-heading`) it shortens to "chess.com ↗".
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
 ### 4.7b Layout and responsiveness
@@ -326,7 +328,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 88 tests in 12 files, about 25 s.
+- `npm test`: 90 tests in 13 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every world-level is present once and in order, `parseLevelId`, and every level is solvable and beats the opponent
@@ -336,6 +338,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
+  - `links`: the chess.com URL matches ppz's output, and every level's FEN round-trips through it
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
   - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)

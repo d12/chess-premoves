@@ -5,6 +5,7 @@ import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOppone
 import {
   annotationColor, annotationLayers, EMPTY_ANNOTATIONS, hasAnnotations, toggleArrow, toggleHighlight,
 } from "./game/annotations.js";
+import { chessComAnalysisUrl } from "./game/links.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { createProgressStore } from "./game/progress.js";
@@ -1001,7 +1002,10 @@ function renderOutcome() {
     return `
     <div class="outcome-card is-perfect ${state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">Perfect solve</p>
-      <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
+      <div class="outcome-heading">
+        <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
+        ${renderChessComLink()}
+      </div>
       <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
@@ -1019,7 +1023,10 @@ function renderOutcome() {
   return `
     <div class="outcome-card ${victory ? "is-victory" : "is-defeat"} ${victory && state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">${victory ? "Beautifully seen" : "Keep training"}</p>
-      <h3>${title}</h3>
+      <div class="outcome-heading">
+        <h3>${title}</h3>
+        ${victory ? renderChessComLink() : ""}
+      </div>
       <p>${escapeHTML(message)}</p>
       ${perfectHint}
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
@@ -1030,6 +1037,13 @@ function renderOutcome() {
       </div>
     </div>
   `;
+}
+
+// After a win, beside the result's heading: the level's starting position on chess.com's
+// analysis board (the same URL ppz prints), in a new tab so the game stays where it is.
+function renderChessComLink() {
+  const href = escapeHTML(chessComAnalysisUrl(state.puzzle.fen));
+  return `<a class="chesscom-link" href="${href}" target="_blank" rel="noopener noreferrer" data-action="view-on-chesscom" aria-label="View on chess.com (opens in a new tab)"><span class="chesscom-link-verb">View on </span>chess.com <span class="external-icon" aria-hidden="true">↗</span></a>`;
 }
 
 /** The next level in the same stage, or null on a stage's last level. */
@@ -1771,6 +1785,8 @@ app.addEventListener("click", (event) => {
     } else if (action === "retry-puzzle") {
       sounds.play("click");
       openLevel(state.level.id);
+    } else if (action === "view-on-chesscom") {
+      sounds.play("click"); // the link opens chess.com in a new tab by itself
     } else if (action === "next-level") {
       const next = nextLevelInStage();
       if (next) {
