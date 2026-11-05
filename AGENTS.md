@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stats-screen PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 86 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the world-level puzzles PR (4 Nov 2026): 5 worlds × 5 levels with one `puzzles.json` entry per world-level (still only 5 distinct positions, each repeated across its world), synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 88 passing tests.
 
 ---
 
@@ -52,10 +52,10 @@ src/
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
     stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
-    puzzles.json          the levels (written by `ppz app`)
-    puzzles.js            frozen PUZZLES list + getPuzzle(id)
-    stages.json           the world/level layout: which puzzle each level uses (hand-edited)
-    stages.js             STAGES, LEVELS, getStage, getLevel, nextLevel, nextStage
+    puzzles.json          one puzzle per level, ids "1-1"…"5-5" in play order (written by `ppz app`)
+    puzzles.js            frozen PUZZLES list + getPuzzle(id), parseLevelId("3-2")
+    stages.json           each world's display data: name, tagline, theme, mascot (hand-edited)
+    stages.js             STAGES (levels = the puzzles whose id starts "<world>-"), LEVELS, getStage, getLevel, nextLevel, nextStage
     annotations.js        right-click arrows and highlights (pure helpers + SVG)
   engine/
     premoveOpponent.js    loads the WASM refuter; createPremoveOpponent() → { bestMove(fen), analysis }
@@ -152,31 +152,32 @@ There is **no Stockfish in the game**. It was removed because it plays good ches
 - API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})` (now called on every win, not only the first), `attemptCount`, `recordAttempt`, `winCount`, `firstWinAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
 - Separately, `chess-premove-badges-seen-v1` (in `stats.js`) lists the earned badges the player has already seen on the stats screen. It's cosmetic: unreadable data just means badges show as new once more.
 - Levels unlock in play order (1-1 … 1-5, 2-1 …): a level needs every earlier level completed, so a world opens only once the whole previous world is cleared.
-- Progress is keyed by **level slot**, so pointing a level at a different puzzle in `stages.json` keeps that slot's completion for returning players.
+- Progress is keyed by **level slot**, so replacing a level's puzzle (`ppz app add … --level S-L`) keeps that slot's completion for returning players.
 - **Dev mode** (`import.meta.env.DEV`, i.e. `npm run dev`): clicking a locked level unlocks it for the current page session only; locked worlds can be opened too.
 
 ### 4.6 `puzzles.json` schema
 
-An array, numbered `"1".."N"` with no gaps:
+An array with **one entry per level, in play order**. Each entry's `id` is its world-level (`"3-2"` = world 3, level 2), so the ids are exactly `"1-1"…"1-5", "2-1"…"5-5"`: every world-level is present once, with no gaps, extras or other ids. The same position may appear at several levels (today each world repeats one position five times); `ppz app list` marks those "(same as 1-1)".
 
 ```json
-{ "id": "1", "title": "Starting simple", "description": "…",
+{ "id": "1-1", "title": "Starting simple", "description": "…",
   "fen": "8/1k6/8/8/8/8/2KQ4/4R3 w - - 0 1", "number_of_moves": 3,
   "solution": ["Qc3","Rb1","Qa1"], "solution_uci": ["d2c3","e1b1","c3a1"] }
 ```
 
-Edit it with `ppz app …` (§6), not by hand. `test/puzzles.test.js` checks each puzzle: numbering, that the solution can be entered on the planning board, and that it actually beats the refuter.
+Edit it with `ppz app add … --level S-L` (§6), not by hand. `test/puzzles.test.js` checks that every world-level of every world in `stages.json` is present exactly once and in order, and for each puzzle that the solution can be entered on the planning board and actually beats the refuter.
 
 ### 4.6b `stages.json` schema (the world/level layout)
 
-Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists the puzzle id used by each of its levels:
+Hand-edited (`ppz` doesn't touch it). An array of worlds in order, with display data only; a world's levels are the `puzzles.json` entries whose ids start with its id (`"2-1"`…`"2-5"`):
 
 ```json
 { "id": "2", "name": "Knight's Wood", "tagline": "Paths twist between the pines.",
-  "theme": "forest", "piece": "n", "puzzles": ["2","2","2","2","2"] }
+  "theme": "forest", "piece": "n" }
 ```
 
-- For now every world repeats one puzzle (world N = puzzle N ×5) until more puzzles exist; replace entries as puzzles are added.
+- (Before Nov 2026 each world had a `puzzles` array pointing at puzzle numbers; that's gone, so there is one source of truth for which puzzle a level plays.)
+- Adding a world or a level means adding it here and its world-levels to `puzzles.json` by hand, and updating the 5 × 5 counts in the tests.
 - `theme` must be one of `meadow`, `forest`, `desert`, `frost`, `volcano` (styled in `ui/worlds.css`, drawn in `ui/scenery.js`). `piece` is the world's mascot (`p n b r q k`): the landmark on its card and the token on its level map.
 - `test/stages.test.js` checks 5 worlds × 5 levels, ids `S-L`, display fields, distinct themes and that every puzzle id exists. Change those counts in the test if the structure changes on purpose.
 
@@ -290,7 +291,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **Workflow:**
   1. `./ppz generate --min-moves 3 --count 15 --minutes 5` finds candidates and queues them for review.
   2. `./ppz review` steps through them (`a` accepts into the shortlist `puzzle-finder/puzzles.json`).
-  3. `./ppz app add --from-db N` adds a shortlisted puzzle to the game, or `./ppz app add "FEN"`. Use `--number K` to replace or append, and `--insert` to shift later levels up.
+  3. `./ppz app add --from-db N --level 3-2` puts a shortlisted puzzle in world 3, level 2 (or `./ppz app add "FEN" --level 3-2`). `--level` is required and must be an existing world-level; it replaces what's there (asks first; `--yes` skips). There's no `remove` and no `--number`/`--insert`: levels never shift. `./ppz app list` marks levels that repeat an earlier position.
   4. Finally run `npm test`.
   - `./ppz solve "FEN"` analyses any position.
 - **Useful generate options:** `--min-moves/--max-moves`, `--min-pieces/--max-pieces` (kings included; adds scenery pawns and minors), `--pieces knight` with `--strict`, `--material KRB-K,KQ-KP`, `--minutes` (a hard deadline), and `--details`.
@@ -305,7 +306,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `quality.py`: scoring and archive; the weights are in `config.toml`
   - `store.py`: shortlist and queue
   - `verify.py`: independent brute-force verifier
-  - `app.py`: reads and writes the game's `puzzles.json`
+  - `app.py`: reads and writes the game's `puzzles.json`, and refuses to load or save one whose ids aren't world-levels in play order
   - `sftools.py`: Stockfish annotator, failure-tolerant; errors are logged to `stockfish-errors.log`
 - **Position validity:** generated positions must be reachable. Per side that means ≤16 pieces and ≤8 pawns, and promoted extras (Q>1, R>2, N>2, or >1 bishop per square colour) must be ≤ 8 − pawns. Newer Stockfish versions crash on impossible material.
 - **Verification history:**
@@ -318,13 +319,13 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 86 tests in 12 files, about 25 s.
+- `npm test`: 88 tests in 12 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
-  - `puzzles`: every level is solvable and beats the opponent
+  - `puzzles`: every world-level is present once and in order, `parseLevelId`, and every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, wins and first-win attempts, stage gating, pre-stage saves
   - `stats`: rank ladder and promotions, counters, first-try and hard-won clears, badges, seen-badge memory
-  - `stages`: the 5×5 layout in `stages.json`
+  - `stages`: the 5×5 layout from `stages.json` + `puzzles.json`, and that each level plays the puzzle with its own id
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
@@ -342,10 +343,10 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Take screenshots and look at them.
   - **Stats screen:** seed progress (including `wins`/`firstWins`), open it with `[data-action="stats"]`, wait ~1.5 s for the intro, and check each tab (`.stats-tab[data-tab=…]`, shown when narrower than 960 or shorter than 520) for zero page scroll **and zero scroll inside `.stats-panel`**, with a fresh player (no saved progress), a mid-game one and a Grandmaster. Note: each `.stats-panel` is an inline-size container, so `cqw` inside a panel means the panel's width.
   - **Layout sweep** (after any CSS change): drive every screen (world map, level map, planning, a queued line with a selection, playing, perfect result, defeat, cleared level map) at phone portrait/landscape (280×653 fold, 360×640, 375×667, 390×844, 430×932, 640×360, 667×375, 844×390, 932×430), tablets (768×1024, 1024×768, 1024×1366, 1366×1024) and desktop windows (800×600, 1280×720, 1366×768, 1440×900, 1920×1080, 2560×1080, 1200×560, 520×1000), with `isMobile`/`hasTouch` for phones and tablets. For each, assert `document.scrollingElement.scrollHeight − innerHeight === 0` (and the same horizontally), that no button/heading/board is outside the viewport unless inside a scroller, that buttons are ≥ 32 px, and that the board's width is identical across planning/playing/result. Also check the promotion picker fits (level 5-1: d4–d5–d6–d7–d8), the system Back flow (`page.goBack()`), and resizing mid-level (portrait ↔ landscape). Seed progress with `addInitScript` + `localStorage`.
-- **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
-  - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
-  - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
-  - A losing line: puzzle 1 `d2d7`. A line whose 2nd premove becomes illegal: puzzle 1 `c2b1 d2e1`.
+- **Lines that are known to work** (for now every level of world N plays the same position; every `solution_uci` in `puzzles.json` is a perfect solve):
+  - World 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
+  - World 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
+  - A losing line: world 1 `d2d7`. A line whose 2nd premove becomes illegal: world 1 `c2b1 d2e1`.
   - A full 25-level playthrough of the production build (all perfect) takes about 3 minutes headless.
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
@@ -381,7 +382,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
 - Possible next features: showing why a plan failed (`opponent.analysis.line`). Stats ideas not done: a time-played counter, streaks (days played), and celebrating a badge the moment it's earned (today it's flagged on the stats button and celebrated on the stats screen). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
-- The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
+- 20 of the 25 levels still repeat their world's first position. Fill them with `ppz app add … --level S-L`; `ppz app list` shows which ones are repeats.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
 - Offline updates are silent: a new deploy shows up on the launch after next. A small "New version ready · Restart" toast (listen for `controllerchange`) would make updates visible.
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).

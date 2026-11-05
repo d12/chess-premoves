@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .engine import (TABLES_DIR, GeneratorPool, Solver, build_tables, chesscom_url, cuda_buildable, cuda_gpus,
                      ensure_binary, find_stockfish, pick_device, table_files)
-from .app import DEFAULT_APP_PUZZLES, AppPuzzles
+from .app import DEFAULT_APP_PUZZLES, AppPuzzles, parse_level
 from .quality import DEFAULT_WEIGHTS, Archive, Scored, canonical_key, score
 from .store import DEFAULT_DB, DEFAULT_QUEUE, Database, Queue, review_block
 from .verify import verify_plan
@@ -489,8 +489,22 @@ def _confirm(question: str, assume_yes: bool) -> bool:
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
-def _show_app_puzzle(p: dict) -> str:
-    return f"{p['id']:>3}. {p['number_of_moves']} moves  {p['title']:<36}  {p['fen']}"
+def _show_app_puzzle(p: dict, repeat_of: str | None = None) -> str:
+    line = f"{p['id']:>5}. {p['number_of_moves']} moves  {p['title']:<36}  {p['fen']}"
+    return line + (f"  (same as {repeat_of})" if repeat_of else "")
+
+
+def _first_levels(puzzles: list[dict]) -> dict[str, str]:
+    """For each level whose position already appeared at an earlier level: that earlier level."""
+    seen: dict[str, str] = {}
+    repeats: dict[str, str] = {}
+    for p in puzzles:
+        key = canonical_key(p["fen"])
+        if key in seen:
+            repeats[p["id"]] = seen[key]
+        else:
+            seen[key] = p["id"]
+    return repeats
 
 
 def cmd_app(a):
@@ -501,24 +515,26 @@ def cmd_app(a):
         sys.exit(str(e))
 
     if a.action == "list":
+        repeats = _first_levels(puzzles)
         for p in puzzles:
-            print(_show_app_puzzle(p) + (f"\n       {' '.join(p.get('solution', []))}" if a.solutions else ""))
-        err(f"{len(puzzles)} puzzles in {app.path}")
+            print(_show_app_puzzle(p, repeats.get(p["id"]))
+                  + (f"\n         {' '.join(p.get('solution', []))}" if a.solutions else ""))
+        distinct = len(puzzles) - len(repeats)
+        err(f"{len(puzzles)} levels, {distinct} distinct puzzles in {app.path}"
+            + (f"; {len(repeats)} levels repeat an earlier one" if repeats else ""))
         return
 
-    if a.action == "remove":
-        if a.number is None or not 1 <= a.number <= len(puzzles):
-            sys.exit(f"give a puzzle number between 1 and {len(puzzles)} with --number")
-        old = puzzles[a.number - 1]
-        print(_show_app_puzzle(old))
-        if not _confirm(f"Remove puzzle {a.number} and renumber the {len(puzzles) - a.number} after it?", a.yes):
-            sys.exit("cancelled")
-        del puzzles[a.number - 1]
-        app.save(puzzles)
-        print(f"removed; the app now has {len(puzzles)} puzzles")
-        return
+    # add: fill a world-level with a new puzzle
+    levels = ", ".join(p["id"] for p in puzzles)
+    if not a.level:
+        sys.exit(f"give the world-level to put the puzzle in, e.g. --level 3-2 (levels: {levels})")
+    if parse_level(a.level) is None:
+        sys.exit(f"--level must be a world-level like 3-2, not {a.level!r}")
+    index = app.index_of(puzzles, a.level)
+    if index is None:
+        sys.exit(f"there is no level {a.level}; the game's levels are {levels}")
+    level = puzzles[index]["id"]
 
-    # add
     fen = a.fen
     if a.from_db is not None:
         items = Database(a.db).load()
@@ -527,11 +543,6 @@ def cmd_app(a):
         fen = items[a.from_db - 1]["fen"]
     if not fen:
         sys.exit("give a FEN, or --from-db K to take puzzle K from `ppz db list`")
-    number = a.number if a.number is not None else len(puzzles) + 1
-    if not 1 <= number <= len(puzzles) + 1:
-        sys.exit(f"puzzles are numbered 1..{len(puzzles)} and unlock in order; "
-                 f"use a number up to {len(puzzles) + 1} (the next free one)")
-    replacing = number <= len(puzzles) and not a.insert
 
     with Solver() as s:
         d = s.analyze(fen, a.max_moves, deep=False)
@@ -543,27 +554,19 @@ def cmd_app(a):
     ok, why = verify_plan(fen, d["plan_uci"])
     if not ok:
         sys.exit(f"independent verification failed: {why}")
-    dup = app.duplicate_of(puzzles, fen, ignore_index=number - 1 if replacing else None)
+    dup = app.duplicate_of(puzzles, fen, ignore_index=index)
     if dup and not a.allow_duplicate:
-        sys.exit(f"this position (or a mirror image) is already puzzle {dup}; use --allow-duplicate to add it anyway")
+        sys.exit(f"this position (or a mirror image) is already level {dup}; use --allow-duplicate to add it anyway")
 
     entry = app.entry(d, a.title, a.description)
-    print(f"{'replace' if replacing else 'insert' if number <= len(puzzles) else 'add'} puzzle {number}: "
-          f"{entry['title']} — {d['n']} moves: {' '.join(d['plan_san'])}")
-    if replacing:
-        print(f"  currently: {_show_app_puzzle(puzzles[number - 1])}")
-        if not _confirm(f"Replace puzzle {number}?", a.yes):
-            sys.exit("cancelled")
-        puzzles[number - 1] = entry
-    elif number <= len(puzzles):
-        if not _confirm(f"Insert as puzzle {number} and shift {len(puzzles) - number + 1} puzzles up by one?", a.yes):
-            sys.exit("cancelled")
-        puzzles.insert(number - 1, entry)
-    else:
-        puzzles.append(entry)
+    entry["id"] = level
+    print(f"level {level}: {entry['title']} — {d['n']} moves: {' '.join(d['plan_san'])}")
+    print(f"  currently: {_show_app_puzzle(puzzles[index])}")
+    if not _confirm(f"Replace the puzzle at level {level}?", a.yes):
+        sys.exit("cancelled")
+    puzzles[index] = entry
     app.save(puzzles)
-    print(f"saved {app.path} ({len(puzzles)} puzzles). Run `npm test` in the app to check every puzzle "
-          f"plays correctly in the game.")
+    print(f"saved {app.path}. Run `npm test` in the app to check every puzzle plays correctly in the game.")
 
 
 # ---------------------------------------------------------------- main
@@ -642,19 +645,18 @@ def main(argv=None):
     i = sub.add_parser("info", help="show detected hardware, Stockfish and tables")
     i.set_defaults(func=cmd_info)
 
-    ap = sub.add_parser("app", help="manage the game's puzzle list (src/game/puzzles.json)")
-    ap.add_argument("action", choices=["list", "add", "remove"])
-    ap.add_argument("fen", nargs="?", help="with add: the position (or use --db)")
-    ap.add_argument("--number", "-n", type=int,
-                    help="puzzle number: replaces it if it exists, appends if it is the next one (default: append)")
-    ap.add_argument("--insert", action="store_true", help="with add: insert at --number and shift later puzzles")
+    ap = sub.add_parser("app", help="manage the game's levels (src/game/puzzles.json)")
+    ap.add_argument("action", choices=["list", "add"])
+    ap.add_argument("fen", nargs="?", help="with add: the position (or use --from-db)")
+    ap.add_argument("--level", "-l", metavar="W-L",
+                    help="with add: the world-level to put the puzzle in, e.g. 3-2 (replaces what is there)")
     ap.add_argument("--from-db", type=int, metavar="K", help="with add: take puzzle K from `ppz db list`")
     ap.add_argument("--title", help="default: generated from the material, e.g. 'Rook and bishop vs king'")
     ap.add_argument("--description", help="default: 'Plan the forced premove mate in N, ...'")
     ap.add_argument("--solutions", action="store_true", help="with list: show solutions")
     ap.add_argument("--allow-duplicate", action="store_true")
     ap.add_argument("--max-moves", type=int, default=10)
-    ap.add_argument("--yes", "-y", action="store_true", help="don't ask before replacing/inserting/removing")
+    ap.add_argument("--yes", "-y", action="store_true", help="don't ask before replacing a level's puzzle")
     ap.add_argument("--app-puzzles", default=str(DEFAULT_APP_PUZZLES), help="path to the app's puzzles.json")
     ap.set_defaults(func=cmd_app)
 
