@@ -301,7 +301,7 @@ p {
   grid-template-columns: minmax(0, 1fr);
   /* the controls' row keeps room for a result card, so the board stays the same size
      from planning through playback to the result instead of jumping around */
-  grid-template-rows: auto minmax(0, 1fr) minmax(min(var(--panel-reserve), 36cqh), auto);
+  grid-template-rows: auto minmax(0, 1fr) minmax(min(var(--panel-reserve), var(--panel-cap, 36cqh)), auto);
   gap: 8px;
 }
 
