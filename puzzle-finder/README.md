@@ -103,7 +103,7 @@ on a 3090. The CPU and CUDA builders share the same per-position code
 | `ppz add FEN ...` / `--file f.txt` | verify and add positions straight to the db |
 | `ppz db list\|stats\|export\|remove` | manage the db; export as `json`, `jsonl`, `csv` or `sql` |
 | `ppz queue list\|clear` | manage the review queue |
-| `ppz app list\|add\|remove` | manage the game's puzzle list (`../src/game/puzzles.json`), see below |
+| `ppz app list\|add` | manage the game's levels (`../src/game/puzzles.json`), see below |
 | `ppz tables build\|status` | build mate tables on GPU/CPU (`--device`, `--five`) / list them |
 | `ppz info` | detected CPU, GPU, CUDA, Stockfish and tables |
 
@@ -148,24 +148,27 @@ Files: `review_queue.jsonl` and `puzzles.json` in the current directory by defau
 ## Adding puzzles to the game
 
 The game reads `src/game/puzzles.json` (one level up from this folder; override with
-`--app-puzzles PATH` or `PPZ_APP_PUZZLES`). Levels are numbered 1..N and unlock in order,
-so numbers are kept contiguous:
+`--app-puzzles PATH` or `PPZ_APP_PUZZLES`). It has one puzzle per level, in play order, and
+each puzzle's id is its world-level: `1-1` … `1-5`, `2-1` … `5-5`. Every world-level always
+has exactly one puzzle, so the ids are fixed and `add` fills a level by replacing what is
+there:
 
 | command | effect |
 |---|---|
-| `./ppz app add "FEN"` | append as puzzle N+1 |
-| `./ppz app add "FEN" --number K` | replace puzzle K (asks first); if K is N+1, append |
-| `./ppz app add "FEN" --number K --insert` | insert at K, shifting K..N up by one |
-| `./ppz app add --from-db 3` | take puzzle 3 from `ppz db list` (your accepted puzzles) |
-| `./ppz app remove --number K` | remove K and renumber the rest |
-| `./ppz app list [--solutions]` | show the app's puzzles |
+| `./ppz app add "FEN" --level 3-2` | put the puzzle in world 3, level 2 (asks before replacing) |
+| `./ppz app add --from-db 3 --level 3-2` | the same, with puzzle 3 from `ppz db list` (your accepted puzzles) |
+| `./ppz app list [--solutions]` | show every level; a level that repeats an earlier one's position is marked "(same as 1-1)" |
 
-`add` solves the position, verifies the solution independently, refuses positions that are
-already in the app (including mirror images; `--allow-duplicate` overrides), and stores
-`fen`, `number_of_moves`, `solution` (SAN) and `solution_uci`. Title and description are
-generated (e.g. "Rook and bishop vs king", "Plan the forced premove mate in four, ...")
-unless you pass `--title` / `--description`. `--yes` skips confirmations. Then run
-`npm test` at the repo root: it checks every puzzle in the file plays correctly in the game.
+`add` refuses a world-level that isn't in the file (it lists the valid ones), solves the
+position, verifies the solution independently, refuses positions that are already at
+another level (including mirror images; `--allow-duplicate` overrides), and stores `fen`,
+`number_of_moves`, `solution` (SAN) and `solution_uci`. Title and description are generated
+(e.g. "Rook and bishop vs king", "Plan the forced premove mate in four, ...") unless you
+pass `--title` / `--description`. `--yes` skips the confirmation. Then run `npm test` at the
+repo root: it checks every world-level is present once and every puzzle plays correctly in
+the game. There is no `remove`: a level can't be left empty, so replace its puzzle instead.
+Adding a world or a level is a hand edit of `src/game/stages.json` and `puzzles.json` plus
+the game's tests.
 
 ## Browser opponent (WebAssembly)
 

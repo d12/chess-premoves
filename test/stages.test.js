@@ -32,14 +32,16 @@ test("every stage has display fields and a styled theme", () => {
   assert.equal(new Set(STAGES.map((stage) => stage.theme)).size, STAGES.length, "each stage looks different");
 });
 
-test("every level points at a real puzzle", () => {
+test("every level points at a real puzzle, and every puzzle is a level", () => {
   for (const level of LEVELS) {
     assert.ok(PUZZLES.includes(level.puzzle), `level ${level.id}`);
+    assert.equal(level.puzzle.id, level.id, `level ${level.id} uses the puzzle with its own id`);
   }
+  assert.equal(LEVELS.length, PUZZLES.length, "no puzzle belongs to a world that doesn't exist");
 });
 
 test("lookups and next-level navigation follow play order", () => {
-  assert.equal(getLevel("2-3").puzzle.id, "2");
+  assert.equal(getLevel("2-3").puzzle.id, "2-3", "each level uses its own puzzles.json entry");
   assert.equal(getStage(4).name, STAGES[3].name);
   assert.equal(nextLevel("1-4").id, "1-5");
   assert.equal(nextLevel("1-5").id, "2-1", "the last level leads into the next stage");

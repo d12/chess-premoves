@@ -1,0 +1,593 @@
+/* The puzzle page's control panel: the premove tray, the buttons and the result card's home.
+   The tray shows the queued line as chunky tiles (the piece that moves over the square it
+   goes to), with the puzzle's perfect count as slots to fill, like a combo or inventory bar.
+   Colours come from the world's [data-theme] tokens (see worlds.css).
+
+   The panel is sized to its contents. Compact (portrait/narrow) by default; the wide layout
+   (board beside the panel) is the container query further down, which matches the one in
+   style.css. On portrait screens the panel sits in a reserved row (--panel-reserve in
+   style.css) and must fit it in every state, or the board would resize mid-level. */
+
+.control-panel {
+  grid-area: panel;
+  align-self: end;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 3px 0 #e2e7de, 0 12px 26px rgba(48, 60, 42, 0.06);
+}
+
+.control-panel > * {
+  flex: none;
+  margin: 0;
+}
+
+.panel-top {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-top h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #23301e;
+  font-family: var(--font-game);
+  font-size: 1.08rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-top .run-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-ink, #2e4a24);
+}
+
+.panel-top .spinner {
+  flex: none;
+  border-color: color-mix(in srgb, var(--accent, #587848) 22%, #fff);
+  border-top-color: var(--accent, var(--green));
+}
+
+/* "2/3 ★": the count against a perfect solve */
+.par-meter {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 3px 9px 2px;
+  border: 1px solid var(--gold-border);
+  border-radius: 999px;
+  color: var(--gold-ink);
+  background: var(--gold-pale);
+  font-family: var(--font-game);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.par-meter small {
+  font-size: 0.78em;
+  opacity: 0.75;
+}
+
+.par-meter.is-full {
+  box-shadow: 0 0 0 3px rgba(242, 194, 60, 0.25);
+}
+
+.par-meter.is-over {
+  border-color: var(--surface-border);
+  color: var(--text-muted);
+  background: var(--surface-soft);
+}
+
+.par-meter.is-over .par-star {
+  opacity: 0.45;
+}
+
+/* only when there's room (the wide layout); the pulsing slot says it on small screens */
+.panel-hint {
+  display: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.inline-error {
+  color: #a93630;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+/* ---------- The tray ---------- */
+
+.tray-wrap {
+  margin: -4px -6px;
+  padding: 6px 6px 8px; /* room for the tiles' raised edge, the undo badge and focus rings */
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.tray-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.premove-tray {
+  --tile-w: 56px;
+  --tile-h: 62px;
+  width: max-content;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tray-slot {
+  flex: none;
+}
+
+.tray-tile {
+  position: relative;
+  width: var(--tile-w);
+  height: var(--tile-h);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  align-items: center;
+  padding: 6px 2px 6px;
+  border: 2px solid #dfe5da;
+  border-radius: 13px;
+  color: #23301e;
+  background: #fff;
+  box-shadow: 0 3px 0 #d0d8ca;
+  font: inherit;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+/* moves inside the perfect count stand on a gold edge; extra ones on a plain one */
+.tray-tile.is-par {
+  box-shadow: 0 3px 0 #e6c45c;
+}
+
+.tile-piece {
+  width: calc(var(--tile-h) * 0.5);
+  height: calc(var(--tile-h) * 0.5);
+  display: grid;
+  place-items: center;
+  font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", serif;
+  font-size: calc(var(--tile-h) * 0.42);
+  line-height: 1;
+}
+
+.tile-piece img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tile-square {
+  font-family: var(--font-game);
+  font-size: 0.98rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.tile-step {
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  color: #a2aa9c;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* a move that was just queued pops into its slot */
+.tray-tile.is-new {
+  animation: tile-in 320ms cubic-bezier(0.25, 1.6, 0.5, 1);
+}
+
+@keyframes tile-in {
+  from { transform: translateY(6px) scale(0.6); opacity: 0; }
+}
+
+/* the last move is also a button: tap it to take it back */
+button.tray-tile {
+  cursor: pointer;
+}
+
+.tile-undo {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  background: #8b9386;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+button.tray-tile:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #d0d8ca;
+}
+
+@media (hover: hover) {
+  button.tray-tile:hover {
+    border-color: #e3a49f;
+  }
+
+  button.tray-tile:hover .tile-undo {
+    background: #c6463f;
+  }
+}
+
+button.tray-tile:focus-visible {
+  outline: 3px solid var(--accent, #6f9558);
+  outline-offset: 2px;
+}
+
+/* empty slots for the rest of the perfect line */
+.tray-tile.is-empty {
+  border: 2px dashed #d7ded2;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+}
+
+.tile-star {
+  grid-row: 1 / -1;
+  color: #ead9a0;
+  font-size: 1.15rem;
+}
+
+.tray-tile.is-next {
+  border-color: var(--accent, var(--green));
+  background: color-mix(in srgb, var(--accent-soft, #e7efe1) 60%, #fff);
+  animation: slot-pulse 1.6s ease-in-out infinite;
+}
+
+.tray-tile.is-next .tile-star {
+  color: var(--accent, var(--green));
+  opacity: 0.55;
+}
+
+@keyframes slot-pulse {
+  50% { transform: scale(0.94); border-color: color-mix(in srgb, var(--accent, #587848) 40%, #fff); }
+}
+
+/* ---------- Playback and the result ---------- */
+
+.tray-tile.is-played {
+  border-color: #dfe6da;
+  background: #f3f6f0;
+}
+
+.tray-tile.is-played .tile-step,
+.tray-tile.is-failed .tile-step {
+  font-size: 0;
+}
+
+.tray-tile.is-played .tile-step::after {
+  color: var(--accent, var(--green));
+  font-size: 0.72rem;
+  content: "✓";
+}
+
+.tray-tile.is-current {
+  z-index: 1;
+  border-color: var(--accent-deep, #3b5530);
+  color: #fff;
+  background: var(--accent, var(--green));
+  box-shadow: 0 4px 0 var(--accent-deep, #3b5530), 0 0 0 4px color-mix(in srgb, var(--accent, #587848) 24%, transparent);
+  transform: translateY(-2px);
+}
+
+.tray-tile.is-current .tile-step {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.tray-tile.is-current .tile-piece img {
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.25));
+}
+
+.control-panel.is-playing .tray-tile.is-current {
+  animation: tile-play 380ms cubic-bezier(0.25, 1.6, 0.5, 1);
+}
+
+@keyframes tile-play {
+  from { transform: translateY(-2px) scale(0.86); }
+  60% { transform: translateY(-2px) scale(1.08); }
+}
+
+.tray-tile.is-current.is-winning {
+  border-color: #a87a0a;
+  color: #5b4104;
+  background: linear-gradient(180deg, #ffe68f, #f2c23c);
+  box-shadow: 0 4px 0 #a87a0a, 0 0 0 4px rgba(242, 194, 60, 0.3);
+}
+
+.tray-tile.is-current.is-winning .tile-step {
+  color: #8a6a12;
+}
+
+.tray-tile.is-current.is-winning .tile-square::after {
+  content: "#";
+}
+
+.tray-tile.is-upcoming {
+  opacity: 0.55;
+}
+
+.tray-tile.is-failed {
+  border-color: #e3a49f;
+  color: #a13a34;
+  background: #fbe9e7;
+  box-shadow: 0 3px 0 #e3a49f;
+}
+
+.tray-tile.is-failed .tile-step::after {
+  color: #c6463f;
+  font-size: 0.72rem;
+  content: "✕";
+}
+
+.tray-tile.is-failed .tile-piece {
+  opacity: 0.55;
+}
+
+.tray-tile.is-failed .tile-square {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.tray-tile.is-unused {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.45;
+}
+
+/* After the result the line is history: small tiles under the result card, so the card
+   and the line fit where the tray and buttons were. */
+.control-panel.is-complete .premove-tray {
+  --tile-h: 36px;
+  gap: 6px;
+}
+
+.control-panel.is-complete .tray-tile {
+  width: auto;
+  grid-template-columns: auto auto;
+  grid-template-rows: none;
+  gap: 3px;
+  padding: 0 9px 0 6px;
+  border-radius: 10px;
+}
+
+.control-panel.is-complete .tile-piece {
+  width: 24px;
+  height: 24px;
+}
+
+.control-panel.is-complete .tile-step {
+  display: none;
+}
+
+.control-panel.is-complete .tile-square {
+  font-size: 0.9rem;
+}
+
+.control-panel.is-complete .tray-tile.is-current {
+  transform: none;
+}
+
+/* ---------- Buttons ---------- */
+
+.planning-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.undo-button {
+  width: 50px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.undo-button svg {
+  width: 21px;
+  height: 21px;
+}
+
+.submit-button {
+  min-height: 48px;
+  gap: 9px;
+  border-radius: 12px;
+  background: var(--accent, #557646);
+  box-shadow: 0 4px 0 var(--accent-deep, #3b5530);
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.submit-button:active:not(:disabled) {
+  box-shadow: 0 1px 0 var(--accent-deep, #3b5530);
+}
+
+@media (hover: hover) {
+  .submit-button:hover:not(:disabled) {
+    background: var(--accent, #557646);
+    filter: brightness(1.07);
+  }
+}
+
+.submit-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.submit-short-label {
+  display: none;
+}
+
+/* ---------- Portrait screens with width to spare (tablets) ----------
+   The tray and the buttons share a row, so planning takes no more height than the result
+   (the board keeps its size; see --panel-reserve in style.css). */
+
+@container puzzle (min-width: 560px) {
+  .control-panel.is-planning {
+    display: grid;
+    grid-template-areas:
+      "top top"
+      "tray actions";
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 14px;
+  }
+
+  .control-panel.is-planning > .inline-error {
+    grid-column: 1 / -1;
+  }
+
+  .panel-top {
+    grid-area: top;
+  }
+
+  .tray-wrap {
+    grid-area: tray;
+  }
+
+  .planning-actions {
+    grid-area: actions;
+  }
+
+  .submit-button {
+    padding-inline: 22px;
+  }
+}
+
+/* short portrait phones: after a result the card takes the line's place (the final position
+   is on the board), so the board doesn't have to shrink for it */
+@container puzzle (max-height: 640px) and (max-aspect-ratio: 9/8) {
+  .control-panel.is-complete .tray-wrap {
+    display: none;
+  }
+}
+
+/* ---------- Wide layout: the panel beside the board ---------- */
+
+@container puzzle (min-aspect-ratio: 5/4) or ((min-aspect-ratio: 9/8) and (min-height: 300px)) or ((min-aspect-ratio: 27/25) and (min-height: 700px)) {
+  .control-panel,
+  .control-panel.is-planning {
+    display: flex;
+    align-items: stretch;
+    align-self: start;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .panel-top h2 {
+    font-size: 1.3rem;
+  }
+
+  .panel-hint {
+    display: block;
+  }
+
+  .premove-tray {
+    --tile-w: 64px;
+    --tile-h: 72px;
+    width: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .tray-wrap {
+    overflow: visible;
+    touch-action: auto;
+  }
+
+  .tile-square {
+    font-size: 1.08rem;
+  }
+
+  .control-panel.is-complete .premove-tray {
+    --tile-h: 40px;
+  }
+
+  /* short wide screens (phones on their side): back to compact sizes */
+  @container puzzle (max-height: 560px) {
+    .control-panel {
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .panel-top h2 {
+      font-size: 1.05rem;
+    }
+
+    .panel-hint {
+      display: none;
+    }
+
+    /* one row that scrolls sideways, as on portrait phones */
+    .premove-tray {
+      --tile-w: 52px;
+      --tile-h: 58px;
+      width: max-content;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+
+    .tray-wrap {
+      overflow-x: auto;
+      touch-action: pan-x;
+    }
+
+    .control-panel.is-complete .premove-tray {
+      --tile-h: 34px;
+    }
+  }
+}
+
+/* the narrowest phones */
+@container puzzle (max-width: 330px) {
+  .premove-tray {
+    --tile-w: 50px;
+    --tile-h: 56px;
+    gap: 6px;
+  }
+
+  .submit-label {
+    display: none;
+  }
+
+  .submit-short-label {
+    display: inline;
+  }
+}

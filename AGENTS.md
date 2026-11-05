@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the View-on-chess.com PR (5 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, a "View on chess.com" link after a win, and 88 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the View-on-chess.com PR (5 Nov 2026): 5 worlds × 5 levels with one `puzzles.json` entry per world-level (still only 5 distinct positions, each repeated across its world), synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, a premove tray with playback highlighting, a stats screen, a "View on chess.com" link after a win, and 90 passing tests.
 
 ---
 
@@ -47,16 +47,17 @@ src/
     worlds.css            world map, level maps (incl. their responsive layouts) and per-world themes ([data-theme] tokens, keyframes)
     scenery.js            flat SVG landscapes per theme (renderScene) + per-theme confetti colours
     stats.css             the stats screen and the top bar's stats button
+    panel.css             the puzzle page's control panel: the premove tray, Done/Undo, its layouts
   game/
     session.js            UI-independent game engine: planning, premove queue, playback (createPremoveGame)
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
     stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
     links.js              links out of the game: chessComAnalysisUrl(fen), the same URL ppz prints
-    puzzles.json          the levels (written by `ppz app`)
-    puzzles.js            frozen PUZZLES list + getPuzzle(id)
-    stages.json           the world/level layout: which puzzle each level uses (hand-edited)
-    stages.js             STAGES, LEVELS, getStage, getLevel, nextLevel, nextStage
+    puzzles.json          one puzzle per level, ids "1-1"…"5-5" in play order (written by `ppz app`)
+    puzzles.js            frozen PUZZLES list + getPuzzle(id), parseLevelId("3-2")
+    stages.json           each world's display data: name, tagline, theme, mascot (hand-edited)
+    stages.js             STAGES (levels = the puzzles whose id starts "<world>-"), LEVELS, getStage, getLevel, nextLevel, nextStage
     annotations.js        right-click arrows and highlights (pure helpers + SVG)
   engine/
     premoveOpponent.js    loads the WASM refuter; createPremoveOpponent() → { bestMove(fen), analysis }
@@ -153,31 +154,32 @@ There is **no Stockfish in the game**. It was removed because it plays good ches
 - API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})` (now called on every win, not only the first), `attemptCount`, `recordAttempt`, `winCount`, `firstWinAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
 - Separately, `chess-premove-badges-seen-v1` (in `stats.js`) lists the earned badges the player has already seen on the stats screen. It's cosmetic: unreadable data just means badges show as new once more.
 - Levels unlock in play order (1-1 … 1-5, 2-1 …): a level needs every earlier level completed, so a world opens only once the whole previous world is cleared.
-- Progress is keyed by **level slot**, so pointing a level at a different puzzle in `stages.json` keeps that slot's completion for returning players.
+- Progress is keyed by **level slot**, so replacing a level's puzzle (`ppz app add … --level S-L`) keeps that slot's completion for returning players.
 - **Dev mode** (`import.meta.env.DEV`, i.e. `npm run dev`): clicking a locked level unlocks it for the current page session only; locked worlds can be opened too.
 
 ### 4.6 `puzzles.json` schema
 
-An array, numbered `"1".."N"` with no gaps:
+An array with **one entry per level, in play order**. Each entry's `id` is its world-level (`"3-2"` = world 3, level 2), so the ids are exactly `"1-1"…"1-5", "2-1"…"5-5"`: every world-level is present once, with no gaps, extras or other ids. The same position may appear at several levels (today each world repeats one position five times); `ppz app list` marks those "(same as 1-1)".
 
 ```json
-{ "id": "1", "title": "Starting simple", "description": "…",
+{ "id": "1-1", "title": "Starting simple", "description": "…",
   "fen": "8/1k6/8/8/8/8/2KQ4/4R3 w - - 0 1", "number_of_moves": 3,
   "solution": ["Qc3","Rb1","Qa1"], "solution_uci": ["d2c3","e1b1","c3a1"] }
 ```
 
-Edit it with `ppz app …` (§6), not by hand. `test/puzzles.test.js` checks each puzzle: numbering, that the solution can be entered on the planning board, and that it actually beats the refuter.
+Edit it with `ppz app add … --level S-L` (§6), not by hand. `test/puzzles.test.js` checks that every world-level of every world in `stages.json` is present exactly once and in order, and for each puzzle that the solution can be entered on the planning board and actually beats the refuter.
 
 ### 4.6b `stages.json` schema (the world/level layout)
 
-Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists the puzzle id used by each of its levels:
+Hand-edited (`ppz` doesn't touch it). An array of worlds in order, with display data only; a world's levels are the `puzzles.json` entries whose ids start with its id (`"2-1"`…`"2-5"`):
 
 ```json
 { "id": "2", "name": "Knight's Wood", "tagline": "Paths twist between the pines.",
-  "theme": "forest", "piece": "n", "puzzles": ["2","2","2","2","2"] }
+  "theme": "forest", "piece": "n" }
 ```
 
-- For now every world repeats one puzzle (world N = puzzle N ×5) until more puzzles exist; replace entries as puzzles are added.
+- (Before Nov 2026 each world had a `puzzles` array pointing at puzzle numbers; that's gone, so there is one source of truth for which puzzle a level plays.)
+- Adding a world or a level means adding it here and its world-levels to `puzzles.json` by hand, and updating the 5 × 5 counts in the tests.
 - `theme` must be one of `meadow`, `forest`, `desert`, `frost`, `volcano` (styled in `ui/worlds.css`, drawn in `ui/scenery.js`). `piece` is the world's mascot (`p n b r q k`): the landmark on its card and the token on its level map.
 - `test/stages.test.js` checks 5 worlds × 5 levels, ids `S-L`, display fields, distinct themes and that every puzzle id exists. Change those counts in the test if the structure changes on purpose.
 
@@ -218,7 +220,13 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - **Perfect:** 160 gold confetti pieces with stars burst from the king, and gold cannons fire from the bottom corners when the result card appears. The card pops in, the ★ spins in and a shimmer crosses the card.
   - **Non-perfect win:** **80** red/blue/green/yellow pieces, half as many. The owner tried a deliberately sad grey fizzle and rejected it as "too depressing": a win is still a win.
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
-- **Move list during playback** (`premoveStatus`/`renderPremoves`, from `premovesPlayed` and `failedPremove`): the premove just played is lit in the world's accent colour (`is-current`, `aria-current="step"`, a small pop as it lands), earlier ones get a ✓ (`is-played`), later ones are dimmed (`is-upcoming`). At the result the mating move turns gold with a `#` (`is-winning`), a premove that became illegal is red and struck through with ✕ (`is-failed`), and premoves never needed because mate came first are faded (`is-unused`). Each carries a visually hidden status for screen readers. The list scrolls itself (`keepCurrentPremoveVisible`) to keep the current premove in view, in both the horizontal strip and the vertical list.
+- **The control panel and the premove tray** (`renderPremoves`, `renderTrayTile`, `renderParMeter` in `main.js`; styles in `ui/panel.css`). The owner found the old list "ridiculously big" for 3–4 moves, so the queued line is a **tray of chunky tiles**, like a combo or inventory bar:
+  - Each tile shows the moving piece over its destination square in Lilita One (`c3`, `e8=Q`, `O-O`), with a tiny step number; the SAN is in a visually hidden label.
+  - The puzzle's perfect count (`minimumMoves`) sets the slots: unfilled ones are dashed with a faint ★, and the next one to fill pulses (`is-next`). Tiles inside the perfect count stand on a gold edge (`is-par`); extra moves just add plain tiles. The title row's meter reads "2/3 ★" (gold; grey once over).
+  - The **last tile is a button that undoes it** (× badge; `data-action="undo"`); the ↶ button does the same. A newly queued tile pops in (`is-new`, via `state.trayCount`).
+  - Below: [↶] [I'm done premoving ▶], the Done button in the world's accent colour. One hint line ("Move your pieces on the board to queue premoves.") shows only while empty, and only in the wide layout.
+  - **Playback** (`premoveStatus`, from `premovesPlayed` and `failedPremove`): the tile being played lights up in the world's accent and pops (`is-current`, `aria-current="step"`), played ones get a ✓ (`is-played`), later ones dim (`is-upcoming`). At the result the mating tile turns gold with `#` (`is-winning`), an illegal one is red, struck through, with ✕ (`is-failed`), and moves never needed fade (`is-unused`). At the result the tiles shrink to a mini row under the result card. The tray scrolls itself (`keepCurrentPremoveVisible`) to keep the current tile in view.
+  - **Layouts:** portrait phones, a single row that scrolls sideways if long; tablets in portrait (≥ 560 wide), tray and buttons in one row; wide layout, a content-sized side panel with bigger tiles that wrap; phones on their side, compact sizes and one row. On short portrait phones (≤ 640 tall) the line hides once the result card shows.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
 - **View on chess.com** (wins only, perfect or not; not on defeats, while planning or during playback): a small pill at the end of the result card's heading row (`.outcome-heading`, `renderChessComLink`), linking to chess.com's analysis board for the level's **starting** FEN. The URL comes from `chessComAnalysisUrl` in `game/links.js` and matches `ppz`'s `chesscom_url` (Python `quote_plus`: `/` → `%2F`, space → `+`). It opens in a new tab (`target="_blank" rel="noopener noreferrer"`) and plays `click`. It sits in the heading row rather than among the buttons so the card doesn't gain a row and the board keeps its size; the pill is 24 px tall with a 34 px tap target (`::after`), and below a 260 px heading (`@container outcome-heading`) it shortens to "chess.com ↗".
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
@@ -229,7 +237,7 @@ The owner's brief: it should feel and flow like an app, not a website, on every 
 
 - **App shell** (`style.css`): `html, body` never scroll (`overflow: hidden`, `overscroll-behavior: none`, so no rubber-banding or pull-to-refresh). `#app` is a `100dvh` flex column with safe-area padding (`viewport-fit=cover`): the top bar, then the screen's `<main>` (`flex: 1; min-height: 0`). No text selection, tap highlight or long-press callouts in `#app`; `touch-action: manipulation` (no double-tap zoom; pinch zoom still works). Hover effects are wrapped in `@media (hover: hover)` so taps don't leave buttons stuck in their hover state; buttons press down on `:active` instead. Tap targets are ≥ 40 px (`.icon-toggle` grows to 40 px under `pointer: coarse`).
 - **Every screen is a CSS size container** and lays itself out by its own size, not by viewport breakpoints: `worlds` (`.world-screen`), `stage` (`.stage-screen`), `map` (`.stage-map`), `puzzle` (`.puzzle-screen`) and `board` (`.board-column`). Lengths in `cqw/cqh/cqmin` scale things inside them.
-- **Puzzle page.** Default (portrait/narrow) is a column: one-row heading (round ← button, badge, title, chips line), the board as large as fits (`.board-frame` width = `min(100cqw, 100cqh − labels)` of `.board-column`), and the controls at the bottom (move strip + Done/Undo). The controls' grid row reserves `--panel-reserve` (190 px; 150 px when the screen is ≥ 560 px wide, where the result card puts its buttons beside the text), so **the board keeps exactly the same size from planning through playback to the result**. When the screen is wide enough that the board is bigger beside the controls than above them (the `@container puzzle (min-aspect-ratio: 5/4) or …` query, used in both CSS files), the board takes the full height on the left and the heading + a full side panel sit on the right; on short wide screens (phones on their side, ≤ 560 px tall) that side column is compacted. Boards under 440 px tall drop the "Opponent/You" labels. On short portrait phones (≤ 640 px) the played-move strip hides once the result card shows.
+- **Puzzle page.** Default (portrait/narrow) is a column: one-row heading (round ← button, badge, title, chips line), the board as large as fits (`.board-frame` width = `min(100cqw, 100cqh − labels)` of `.board-column`), and the controls at the bottom (the premove tray + Undo/Done). The controls' grid row reserves `--panel-reserve` (190 px; 150 px when the screen is ≥ 560 px wide, where the result card puts its buttons beside the text and the tray shares a row with the buttons), so **the board keeps exactly the same size from planning through playback to the result**: the panel must fit that row in every state, so check panel heights when changing it. When the screen is wide enough that the board is bigger beside the controls than above them (the `@container puzzle (min-aspect-ratio: 5/4) or …` query, used in both CSS files), the board takes the full height on the left and the heading + a full side panel sit on the right; on short wide screens (phones on their side, ≤ 560 px tall) that side column is compacted. Boards under 440 px tall drop the "Opponent/You" labels. On short portrait phones (≤ 640 px) the played line hides once the result card shows.
 - **World map.** Landscape (`min-aspect-ratio: 6/5`, ≥ 560 px wide): five tall cards side by side, stretched to the available height (capped at 1.75× their width). Portrait: a column of wide cards sharing the height; the hero is a grid (title and progress bar on the left, Continue on the right). The strapline and footnotes hide on short screens. The content is vertically centred (`justify-content: safe center`); `.world-screen` scrolls only if five cards truly can't fit (none of the tested sizes in production).
 - **Level map.** Heading row (round ← "All worlds" pill on wide screens, title, score), the map filling the remaining height (capped at 46 % of the width on landscape screens) and the footer. The map picks the **wide or tall trail by its own aspect ratio** (`@container map (max-aspect-ratio: 1/1)`), and nodes, token, badges and ribbon scale with it (`--node-size: clamp(44px, 13.5cqmin, 80px)`); the flag shrinks on maps under 300 px tall.
 - **Installable:** `manifest.webmanifest` (standalone display) plus apple/mobile web-app meta tags, so Add to Home Screen launches without browser chrome.
@@ -292,7 +300,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **Workflow:**
   1. `./ppz generate --min-moves 3 --count 15 --minutes 5` finds candidates and queues them for review.
   2. `./ppz review` steps through them (`a` accepts into the shortlist `puzzle-finder/puzzles.json`).
-  3. `./ppz app add --from-db N` adds a shortlisted puzzle to the game, or `./ppz app add "FEN"`. Use `--number K` to replace or append, and `--insert` to shift later levels up.
+  3. `./ppz app add --from-db N --level 3-2` puts a shortlisted puzzle in world 3, level 2 (or `./ppz app add "FEN" --level 3-2`). `--level` is required and must be an existing world-level; it replaces what's there (asks first; `--yes` skips). There's no `remove` and no `--number`/`--insert`: levels never shift. `./ppz app list` marks levels that repeat an earlier position.
   4. Finally run `npm test`.
   - `./ppz solve "FEN"` analyses any position.
 - **Useful generate options:** `--min-moves/--max-moves`, `--min-pieces/--max-pieces` (kings included; adds scenery pawns and minors), `--pieces knight` with `--strict`, `--material KRB-K,KQ-KP`, `--minutes` (a hard deadline), and `--details`.
@@ -307,7 +315,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `quality.py`: scoring and archive; the weights are in `config.toml`
   - `store.py`: shortlist and queue
   - `verify.py`: independent brute-force verifier
-  - `app.py`: reads and writes the game's `puzzles.json`
+  - `app.py`: reads and writes the game's `puzzles.json`, and refuses to load or save one whose ids aren't world-levels in play order
   - `sftools.py`: Stockfish annotator, failure-tolerant; errors are logged to `stockfish-errors.log`
 - **Position validity:** generated positions must be reachable. Per side that means ≤16 pieces and ≤8 pawns, and promoted extras (Q>1, R>2, N>2, or >1 bishop per square colour) must be ≤ 8 − pawns. Newer Stockfish versions crash on impossible material.
 - **Verification history:**
@@ -320,13 +328,13 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 88 tests in 13 files, about 25 s.
+- `npm test`: 90 tests in 13 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
-  - `puzzles`: every level is solvable and beats the opponent
+  - `puzzles`: every world-level is present once and in order, `parseLevelId`, and every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, wins and first-win attempts, stage gating, pre-stage saves
   - `stats`: rank ladder and promotions, counters, first-try and hard-won clears, badges, seen-badge memory
-  - `stages`: the 5×5 layout in `stages.json`
+  - `stages`: the 5×5 layout from `stages.json` + `puzzles.json`, and that each level plays the puzzle with its own id
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
   - `annotations`
@@ -344,11 +352,12 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes. For music, render bars with `scheduleRange` into an `OfflineAudioContext` (through the same low-pass/high-pass chain), measure levels per scene against the effects, encode MP3s with `ffmpeg` and send them to the owner; on the dev server, `window.__music.state()` gives `{ world, scene, bar, … }`.
   - Take screenshots and look at them.
   - **Stats screen:** seed progress (including `wins`/`firstWins`), open it with `[data-action="stats"]`, wait ~1.5 s for the intro, and check each tab (`.stats-tab[data-tab=…]`, shown when narrower than 960 or shorter than 520) for zero page scroll **and zero scroll inside `.stats-panel`**, with a fresh player (no saved progress), a mid-game one and a Grandmaster. Note: each `.stats-panel` is an inline-size container, so `cqw` inside a panel means the panel's width.
+  - **Premove tray:** queued tiles are `.tray-tile:not(.is-empty)`, the last one `.tray-tile.is-last` (click it to undo), playback status is on the tile's class, and the current one is `.tray-slot[aria-current]`. Measure the panel and the board in every state (empty, one move, perfect count, over, playing, perfect result, failed result) at phone, tablet and desktop sizes: the board's width must not change.
   - **Layout sweep** (after any CSS change): drive every screen (world map, level map, planning, a queued line with a selection, playing, perfect result, defeat, cleared level map) at phone portrait/landscape (280×653 fold, 360×640, 375×667, 390×844, 430×932, 640×360, 667×375, 844×390, 932×430), tablets (768×1024, 1024×768, 1024×1366, 1366×1024) and desktop windows (800×600, 1280×720, 1366×768, 1440×900, 1920×1080, 2560×1080, 1200×560, 520×1000), with `isMobile`/`hasTouch` for phones and tablets. For each, assert `document.scrollingElement.scrollHeight − innerHeight === 0` (and the same horizontally), that no button/heading/board is outside the viewport unless inside a scroller, that buttons are ≥ 32 px, and that the board's width is identical across planning/playing/result. Also check the promotion picker fits (level 5-1: d4–d5–d6–d7–d8), the system Back flow (`page.goBack()`), and resizing mid-level (portrait ↔ landscape). Seed progress with `addInitScript` + `localStorage`.
-- **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
-  - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
-  - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
-  - A losing line: puzzle 1 `d2d7`. A line whose 2nd premove becomes illegal: puzzle 1 `c2b1 d2e1`.
+- **Lines that are known to work** (for now every level of world N plays the same position; every `solution_uci` in `puzzles.json` is a perfect solve):
+  - World 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
+  - World 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
+  - A losing line: world 1 `d2d7`. A line whose 2nd premove becomes illegal: world 1 `c2b1 d2e1`.
   - A full 25-level playthrough of the production build (all perfect) takes about 3 minutes headless.
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
@@ -384,7 +393,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
 - Possible next features: showing why a plan failed (`opponent.analysis.line`). Stats ideas not done: a time-played counter, streaks (days played), and celebrating a badge the moment it's earned (today it's flagged on the stats button and celebrated on the stats screen). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
-- The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
+- 20 of the 25 levels still repeat their world's first position. Fill them with `ppz app add … --level S-L`; `ppz app list` shows which ones are repeats.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
 - Offline updates are silent: a new deploy shows up on the launch after next. A small "New version ready · Restart" toast (listen for `controllerchange`) would make updates visible.
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).
