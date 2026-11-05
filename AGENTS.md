@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the touch-drag PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, and 67 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the playback-move-highlight PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, and 77 passing tests.
 
 ---
 
@@ -65,13 +65,14 @@ src/
   assets/pieces/*.png     Neo piece images (fall back to Unicode glyphs if missing)
 test/                     node:test suites (see §7)
 scripts/wasm-stamp.mjs    write/check the WASM source fingerprint
+scripts/service-worker.mjs  builds dist/sw.js (precache list + version) and the Vite plugin that runs it
+src/service-worker.js     the offline worker's source (not bundled; see §5.1)
 scripts/download-pieces.mjs
 .githooks/pre-commit      rebuild WASM if its C++ changed; check puzzles if puzzles.json is staged
 .github/workflows/deploy-pages.yml   test + build on PRs; test + build + deploy on push to main
 puzzle-finder/            ppz: see §6 and puzzle-finder/README.md
 puzzle-building-guide.md  the owner's step-by-step guide for generating and adding puzzles
 design.md                 original product brief
-public/engine/            LEFTOVER Stockfish files (~40 MB), unused; see §9
 review_queue.jsonl        stray ppz review queue committed at the repo root; see §9
 ```
 
@@ -109,6 +110,8 @@ await game.play(engine /* { bestMove(fen) → uci } */, { delayMs, startDelayMs,
 - `message`
 - `perfect`: set on completion
 - `minimumMoves`, `movesUsed`
+- `premovesPlayed`: how many queued premoves have been played so far (0 while planning); the opponent's replies don't count
+- `failedPremove`: index of the premove an opponent reply made illegal, else `null`
 - `fen`: the preview FEN while planning, the real FEN afterwards
 - `premoves`: `[{from,to,promotion,san}]`
 - `lastMove`: `{from,to,san,color}`
@@ -124,7 +127,7 @@ The opponent receives the full plan. `chooseReply` searches Black's replies agai
 
 The node limit is 100k. If that is exceeded, it falls back to a first-refutation search, and then to `ruleOfThumbReply` (make the next premove illegal if possible, else capture, else any legal move). Typical replies take well under 1 ms. The refuter mirrors chess.js draw rules, so the browser and the engine agree on outcomes.
 
-There is **no Stockfish in the game**. It was removed because it plays good chess, not anti-plan chess.
+There is **no Stockfish in the game**. It was removed because it plays good chess, not anti-plan chess, and its leftover files (`public/engine/`, ~40 MB, GPL) were deleted in Nov 2026.
 
 ### 4.4 The WASM build (important)
 
@@ -203,6 +206,7 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - **Perfect:** 160 gold confetti pieces with stars burst from the king, and gold cannons fire from the bottom corners when the result card appears. The card pops in, the ★ spins in and a shimmer crosses the card.
   - **Non-perfect win:** **80** red/blue/green/yellow pieces, half as many. The owner tried a deliberately sad grey fizzle and rejected it as "too depressing": a win is still a win.
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
+- **Move list during playback** (`premoveStatus`/`renderPremoves`, from `premovesPlayed` and `failedPremove`): the premove just played is lit in the world's accent colour (`is-current`, `aria-current="step"`, a small pop as it lands), earlier ones get a ✓ (`is-played`), later ones are dimmed (`is-upcoming`). At the result the mating move turns gold with a `#` (`is-winning`), a premove that became illegal is red and struck through with ✕ (`is-failed`), and premoves never needed because mate came first are faded (`is-unused`). Each carries a visually hidden status for screen readers. The list scrolls itself (`keepCurrentPremoveVisible`) to keep the current premove in view, in both the horizontal strip and the vertical list.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
@@ -257,6 +261,14 @@ The owner's brief: it should feel and flow like an app, not a website, on every 
 `.github/workflows/deploy-pages.yml` runs on every push to `main`: `npm ci`, `npm test`, `npm run build`, then publishes `dist/` to GitHub Pages. PRs run the same build without deploying. The Pages source is set to GitHub Actions. Nothing else is needed: merging to `main` ships. Watch the run with
 `gh api "repos/d12/chess-premoves/actions/runs?branch=main&per_page=3"`.
 
+### 5.1 Offline (service worker)
+
+- After every production build, the Vite plugin in `vite.config.js` (`scripts/service-worker.mjs`) writes **`dist/sw.js`**: `src/service-worker.js` with `VERSION` (a hash of every built file's path and contents) and `PRECACHE` (every file in `dist/`, plus `./`) prepended. Dependency-free; no Workbox.
+- `main.js` registers `./sw.js` on `load`, **production only** (`import.meta.env.PROD`); the dev server has no worker.
+- The worker precaches the whole game on install (~0.5 MB, fetched with `cache: "reload"` so the browser's HTTP cache, max-age 600 on Pages, can't hand it the previous deploy), then serves everything **cache-first**; every navigation in scope gets the cached `index.html`. Non-GET and cross-origin requests are left alone; anything not precached goes to the network.
+- **Updates:** any change to the build changes `VERSION`, so the browser installs the new worker in the background on the next visit; it calls `skipWaiting` + `clients.claim`, deletes older `premove-*` caches, and **the launch after that runs the new version**. That's safe because the page loads all its assets at start-up (piece images are inlined in the JS bundle), so an open page never needs a file from the cache being replaced. If the game ever lazy-loads assets, revisit this (keep the old cache until no client uses it).
+- Progress lives in localStorage, so it works offline too.
+
 ---
 
 ## 6. The puzzle finder (`puzzle-finder/`, CLI `./ppz`)
@@ -295,8 +307,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 67 tests in 10 files, about 25 s.
-  - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check
+- `npm test`: 77 tests in 11 files, about 25 s.
+  - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
@@ -306,6 +318,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
+  - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)
 - **`main.js` has no unit tests.** That is how a `ReferenceError` that froze every win reached production (PR #9). After any UI change, **drive the real page in a headless browser.** What has worked:
   - Start `npx vite --port <p> --strictPort` in the background, then use Puppeteer or Playwright with Chromium.
   - Open worlds with `.world-card[data-stage-id="1"]` and levels with `.level-node[data-level-id="1-1"]` (or `.continue-button`).
@@ -319,12 +332,13 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
   - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
-  - A losing line: puzzle 1 `d2d7`.
+  - A losing line: puzzle 1 `d2d7`. A line whose 2nd premove becomes illegal: puzzle 1 `c2b1 d2e1`.
   - A full 25-level playthrough of the production build (all perfect) takes about 3 minutes headless.
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.
 - Headless-browser caveats:
   - The browser's native HTML5 drag image can't be observed. Dispatch `DragEvent`s with a `DataTransfer` to test the mouse drag logic, and ask the owner to try a real drag.
+  - **Offline:** on the production build, wait for `navigator.serviceWorker.controller`, then `context.setOffline(true)`, reload and play a level. For updates, edit a file in the served `dist/`, rerun `writeServiceWorker(dir)` from `scripts/service-worker.mjs`, reload, and poll `caches.keys()` from Node until only the new `premove-<version>` remains (~3 s), then reload once more. Don't return a Promise from `page.waitForFunction`: Playwright treats it as truthy at once.
   - **Touch drags can be tested for real**: open a CDP session (`context.newCDPSession(page)`) on a context with `hasTouch: true` and send `Input.dispatchTouchEvent` (`touchStart`, a few `touchMove`s, `touchEnd` with empty `touchPoints`). Chrome turns these into `pointerType: "touch"` pointer events, so the whole drag path runs.
   - Confetti timing runs slower when frames are throttled.
   - **Don't run `pkill -f <pattern>`** in the same shell command line that contains the pattern: it kills its own shell (exit code 144) and skips everything after it. This once left work stranded in a `git stash`.
@@ -349,7 +363,6 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 9. Loose ends and ideas
 
-- **`public/engine/`** holds about 40 MB of unused Stockfish files (GPL-licensed) that Vite copies into every deploy. Deleting the folder would shrink the site to about 300 KB. This was offered to the owner but not yet done.
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
 - Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
@@ -357,5 +370,5 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).
-- No service worker, so the installed app still needs a connection (the whole game is ~350 KB plus the unused `public/engine/`).
+- Offline updates are silent: a new deploy shows up on the launch after next. A small "New version ready · Restart" toast (listen for `controllerchange`) would make updates visible.
 - iOS: Web Audio is silenced by the ringer switch, so sounds won't play with the phone on silent (normal for web games).

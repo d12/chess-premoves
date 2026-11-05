@@ -611,17 +611,67 @@ function renderPromotionDialog() {
   `;
 }
 
+// Where each queued premove stands once the line is played: done, the one just played
+// (or the mating move), still to come, the one that became illegal, or never needed
+// because mate came first.
+function premoveStatus(index) {
+  const { phase, outcome, premovesPlayed, failedPremove } = state.snapshot;
+  if (phase === "planning") {
+    return "";
+  }
+  if (index === failedPremove) {
+    return "is-failed";
+  }
+  if (index === premovesPlayed - 1) {
+    return phase === "complete" && outcome === "victory" ? "is-current is-winning" : "is-current";
+  }
+  if (index < premovesPlayed) {
+    return "is-played";
+  }
+  return phase === "playing" ? "is-upcoming" : "is-unused";
+}
+
+const PREMOVE_STATUS_LABELS = {
+  "is-played": "played",
+  "is-current": "playing now",
+  "is-current is-winning": "checkmate",
+  "is-upcoming": "to come",
+  "is-failed": "became illegal",
+  "is-unused": "not needed",
+};
+
 function renderPremoves() {
   if (state.snapshot.premoves.length === 0) {
     return `<p class="empty-line">Your queued moves will appear here.</p>`;
   }
   return `
     <ol class="move-list">
-      ${state.snapshot.premoves.map((move, index) => `
-        <li><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(move.san)}</strong></li>
-      `).join("")}
+      ${state.snapshot.premoves.map((move, index) => {
+        const status = premoveStatus(index);
+        const label = PREMOVE_STATUS_LABELS[status];
+        return `
+          <li class="${status}" ${status.startsWith("is-current") ? 'aria-current="step"' : ""}>
+            <span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(move.san)}</strong>${label ? `<em class="visually-hidden">, ${label}</em>` : ""}
+          </li>
+        `;
+      }).join("")}
     </ol>
   `;
+}
+
+// Scrolls the move list (a horizontal strip or a vertical list) to keep the premove being
+// played in view, without moving anything else on the page.
+function keepCurrentPremoveVisible(list) {
+  const current = list?.querySelector(".move-list li[aria-current]");
+  if (!current) {
+    return false;
+  }
+  const listRect = list.getBoundingClientRect();
+  const rect = current.getBoundingClientRect();
+  const left = list.scrollLeft + rect.left - listRect.left - (list.clientWidth - rect.width) / 2;
+  const top = list.scrollTop + rect.top - listRect.top - (list.clientHeight - rect.height) / 2;
+  list.scrollTo({ left: Math.max(0, left), top: Math.max(0, top) });
+  return true;
 }
 
 function renderOutcome() {
@@ -881,7 +931,9 @@ function render() {
   }
 
   const moveList = app.querySelector(".move-list-wrap");
-  if (moveList && previousScroll) {
+  if (keepCurrentPremoveVisible(moveList)) {
+    // during playback the list follows the move being played
+  } else if (moveList && previousScroll) {
     const moveCount = moveList.querySelectorAll(".move-list li").length;
     moveList.scrollTo(moveCount > previousMoveCount
       ? { left: moveList.scrollWidth, top: moveList.scrollHeight }
@@ -1718,5 +1770,15 @@ for (const type of ["pointerdown", "keydown"]) {
 }
 // No music in a background tab; it picks up from the top when the tab is back.
 document.addEventListener("visibilitychange", () => music.setHidden(document.hidden));
+
+// Offline support: the production build ships a service worker that precaches the game
+// (see src/service-worker.js). Not in development, where Vite serves files live.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Offline support is unavailable:", error);
+    });
+  });
+}
 
 void initializeApp();
