@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stats-screen PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 86 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the tutorial PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, a mandatory guided tutorial (a ladder mate), synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 91 passing tests.
 
 ---
 
@@ -47,11 +47,13 @@ src/
     worlds.css            world map, level maps (incl. their responsive layouts) and per-world themes ([data-theme] tokens, keyframes)
     scenery.js            flat SVG landscapes per theme (renderScene) + per-theme confetti colours
     stats.css             the stats screen and the top bar's stats button
+    tutorial.css          the tutorial: world-map button, welcome card, coach, hint arrow
   game/
     session.js            UI-independent game engine: planning, premove queue, playback (createPremoveGame)
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
     progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
     stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
+    tutorial.js           the tutorial: ladder-mate position, guided steps and their copy, tutorial-done store
     puzzles.json          the levels (written by `ppz app`)
     puzzles.js            frozen PUZZLES list + getPuzzle(id)
     stages.json           the world/level layout: which puzzle each level uses (hand-edited)
@@ -150,6 +152,7 @@ There is **no Stockfish in the game**. It was removed because it plays good ches
 - `wins` counts every win of a level; `firstWins` stores **which attempt first solved it** (`attemptCount` at that moment, at least 1). Both start empty for wins made before they existed: those levels report `winCount` 0 and `firstWinAttempt` null, and a later win doesn't invent a first-win attempt for them.
 - Corrupt data **throws**; it is never silently discarded. All writes go through one `save()` helper.
 - API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})` (now called on every win, not only the first), `attemptCount`, `recordAttempt`, `winCount`, `firstWinAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
+- Separately, `chess-premove-tutorial-v1` (in `tutorial.js`) is `"done"` once the tutorial is finished. A player with any completed level counts as done without it (they predate the tutorial). Unreadable storage shows the tutorial again; if saving fails, it still counts as done for that visit, so storage trouble can't lock the game.
 - Separately, `chess-premove-badges-seen-v1` (in `stats.js`) lists the earned badges the player has already seen on the stats screen. It's cosmetic: unreadable data just means badges show as new once more.
 - Levels unlock in play order (1-1 … 1-5, 2-1 …): a level needs every earlier level completed, so a world opens only once the whole previous world is cleared.
 - Progress is keyed by **level slot**, so pointing a level at a different puzzle in `stages.json` keeps that slot's completion for returning players.
@@ -188,6 +191,12 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - **Level map:** the world's panorama with a winding trail through 5 round level nodes (locked padlock / ready with pulse ring / white ✓ completed / gold ★ perfected). The world's piece stands on the next level to play and bobs; a goal flag by level 5 is raised (gold) once the world is cleared, with a "World clear!" / "★ Perfect!" stamp. Footer: "Next up" + Play button, or "On to World N". Escape goes back to the world map. Nodes have a tall layout under 640px.
   - Neither map shows move counts (owner's rule). The puzzle page heading shows a themed `S-L` badge, "World S, level L of 5" and pips, then chips: "Perfect in N premoves", "N attempts" and "★ Perfected" (in the compact heading the kicker text and pips are hidden and the chips become one line of small text). The back button returns to the world's level map. The board's labels follow chess.com: "Opponent · Black" above the board, "You · White" below it.
   - The top bar shows the engine pill only while the engine loads ("LOADING ENGINE") or failed ("ENGINE OFFLINE"); once it's ready it disappears.
+- **Tutorial** (`game/tutorial.js` for the data and copy, `renderTutorial*`/`renderCoach`/`openTutorial`/`finishTutorial` in `main.js`). Mandatory: until it's done, the world map's hero shows a pulsing **Start here · Tutorial** button instead of Start/Continue, every world card is locked (World 1 says "Finish the tutorial to open"), and `openStage`/`openLevel` refuse (dev mode still opens anything). The progress store's own unlock rules are untouched; the gate is `tutorialDone()` in `main.js`, folded into `stageProgress().unlocked`.
+  - It plays on the puzzle screen (`state.tutorial`, `state.level = TUTORIAL_LEVEL`, World 1's meadow theme and music) with the heading "The ladder mate" and a ← back to the world map.
+  - A **welcome card** (`state.tutorialIntro`, a dialog over the board; Escape or "Let's go" closes it) explains the idea: queue every move up front, the opponent sees the plan, find premoves that force mate whatever it does.
+  - Then four guided premoves, `Rb5 Ra6 Rb7 Ra8` from `8/8/8/6k1/R7/1R6/8/7K w`: a green **hint arrow** (its own `.board-hint` SVG layer, so annotations can't wipe it) shows the next move, and a **coach** (a pawn with a speech bubble at the top of the panel, replacing the panel's heading and copy) explains each step. Only the arrow's move is accepted (`attemptMove`); anything else plays the illegal sound and the coach's title becomes "Not that one! Follow the arrow." (in the bubble, not a separate error line, so the board doesn't move). Submit stays disabled until the whole line is queued, then pulses.
+  - The tutorial panel reserves 222 px (190 px at ≥ 560 px wide) so the board keeps one size from the first step to the result.
+  - Submitting plays the line against the real opponent like any level, but records no attempt and no win. The mate is a perfect solve (gold confetti and cannons); the card says "You've got it!" with **To the worlds** and **Play again** (no welcome card the second time). The first completion sets `state.fresh.unlockedStage = "1"`, so World 1's card unlocks with a burst on the world map. After that the world map's footnote has a **Replay the tutorial** link.
 - **Stats screen ("Your record")**, opened from the top bar's star counter (a button with a trophy; a red dot means badges earned but not yet seen). Disabled while a line plays. Back (the ← button, Escape, or the system Back) returns to where it was opened: a world's level map if opened from one or from a level, otherwise the world map. Everything comes from `computeStats(progress, STAGES)` in `game/stats.js`:
   - **Rank:** a ladder of the worlds' mascots, Pawn → Knight → Bishop → Rook → Queen (one step per world cleared), then King (every world cleared) and Grandmaster (every level perfect, gold). Shown as a medallion with the current world's scenery and the rank's piece, a ribbon, a bar toward the next rank (that rank's piece as a silhouette) and a hint ("Clear 3 more levels in Knight's Wood to become a Bishop.").
   - **Counters:** levels cleared, stars, attempts, first-try clears, solve rate (wins ÷ attempts; "—" before the first attempt).
@@ -318,7 +327,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 86 tests in 12 files, about 25 s.
+- `npm test`: 91 tests in 13 files, about 15–25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
@@ -330,9 +339,11 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - `annotations`
   - `wasm-artifact`: stamp freshness
   - `download-pieces`
+  - `tutorial`: the position and guided steps, the line beats the opponent (perfect) and no 1- or 2-premove plan does (3-premove plans were brute-forced once offline: 32,534 plans, none sound), the tutorial-done store, veterans skipping it, broken storage not locking the game
   - `service-worker`: the precache list and version, and the real worker source run in a `vm` sandbox with fake `caches`/`fetch` (install, activate, cache-first fetch, navigation shell, pass-through)
 - **`main.js` has no unit tests.** That is how a `ReferenceError` that froze every win reached production (PR #9). After any UI change, **drive the real page in a headless browser.** What has worked:
   - Start `npx vite --port <p> --strictPort` in the background, then use Puppeteer or Playwright with Chromium.
+  - **A fresh profile hits the tutorial gate first.** Either play it (`.tutorial-button`, `.tutorial-start`, then `b3b5 a4a6 b5b7 a6a8`, submit, `[data-action="finish-tutorial"]`) or seed `localStorage["chess-premove-tutorial-v1"] = "done"` (or any completed level) with `addInitScript`.
   - Open worlds with `.world-card[data-stage-id="1"]` and levels with `.level-node[data-level-id="1-1"]` (or `.continue-button`).
   - **Wait for screen transitions** before clicking: `page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"))`. Clicks during one are swallowed.
   - Click squares via `button[data-square="e2"]`.
@@ -370,6 +381,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - No Stockfish in the game. The opponent is the WASM refuter.
 - The site must stay fully static (GitHub Pages). There is no backend.
 - Sound effects are on by default, synthesized (no audio files), mutable from the top bar or with M. Wins never get a sad sound; losses get a gentle two-note cue.
+- The tutorial is mandatory for new players, short, and guided: a ladder mate whose copy focuses on the one concept (premoves that force mate against any defence) in a light video-game tone. Returning players with any win skip it.
 - Background music is on by default, original (no Mario melodies), synthesized, quieter than the effects, with its own on/off button. Each world has its own piece (owner feedback: "each world dramatically different"; Knight's Wood minor, "like the underground theme").
 
 ---

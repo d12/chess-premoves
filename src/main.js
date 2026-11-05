@@ -3,18 +3,24 @@ import { createMusicPlayer, SCENES, SONGS } from "./effects/music.js";
 import { createSoundPlayer, SOUND_NAMES, soundForMove } from "./effects/sound.js";
 import { createPremoveOpponent, loadPremoveEngine } from "./engine/premoveOpponent.js";
 import {
-  annotationColor, annotationLayers, EMPTY_ANNOTATIONS, hasAnnotations, toggleArrow, toggleHighlight,
+  annotationColor, annotationLayers, arrowGeometry, EMPTY_ANNOTATIONS, hasAnnotations, squareCenter, toggleArrow,
+  toggleHighlight,
 } from "./game/annotations.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { createProgressStore } from "./game/progress.js";
 import { getLevel, getStage, LEVELS, nextLevel, nextStage, STAGES } from "./game/stages.js";
 import { computeStats, loadSeenBadges, saveSeenBadges } from "./game/stats.js";
+import {
+  COMPLETE_CARD, createTutorialStore, isTutorialMove, PLAN_COMPLETE_MESSAGE, PLAYING_COACH, TUTORIAL_INTRO,
+  TUTORIAL_LEVEL, tutorialStep, WRONG_MOVE_MESSAGE,
+} from "./game/tutorial.js";
 import { renderScene, THEME_CONFETTI } from "./ui/scenery.js";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./ui/worlds.css";
 import "./ui/stats.css";
+import "./ui/tutorial.css";
 
 const app = document.querySelector("#app");
 // Effects and music share one AudioContext; the music ducks under fanfares. In development
@@ -59,6 +65,9 @@ const state = {
   engine: null,
   error: null,
   progressStore: null,
+  tutorialStore: null, // whether the tutorial is done (it must be, before the worlds open)
+  tutorial: false, // the puzzle screen is playing the tutorial (state.level is TUTORIAL_LEVEL)
+  tutorialIntro: false, // the tutorial's welcome card is showing over the board
   stage: null, // the stage whose level map is open (screen "stage")
   level: null, // the level being played (screen "puzzle"); state.puzzle is level.puzzle
   // What the last win changed, played as animations the next time the map shows it:
@@ -256,6 +265,11 @@ function pieceImage(color, type) {
   return pieceImages[`./assets/pieces/${color}${type}.png`];
 }
 
+/** Every world stays shut until the tutorial is done (players with earlier wins skip it). */
+function tutorialDone() {
+  return state.tutorialStore?.isDone() ?? true;
+}
+
 function stageProgress(stage) {
   const store = state.progressStore;
   const completed = stage.levels.filter((level) => store.isCompleted(level.id)).length;
@@ -265,7 +279,7 @@ function stageProgress(stage) {
     perfected,
     total: stage.levels.length,
     cleared: completed === stage.levels.length,
-    unlocked: store.isStageUnlocked(stage.id),
+    unlocked: store.isStageUnlocked(stage.id) && tutorialDone(),
   };
 }
 
@@ -297,7 +311,7 @@ function renderWorldCard(stage, index) {
   const locked = !progress.unlocked || fresh;
   const allPerfect = progress.perfected === progress.total;
   const current = progress.unlocked && !progress.cleared;
-  const status = !progress.unlocked ? `Clear World ${previous?.id} to open`
+  const status = !progress.unlocked ? (previous ? `Clear World ${previous.id} to open` : "Finish the tutorial to open")
     : progress.cleared ? (allPerfect ? "Every level perfect" : "World cleared")
       : progress.completed === 0 ? "New world" : `${progress.completed} of ${progress.total} levels`;
   const classes = [
@@ -339,10 +353,21 @@ function renderWorldCard(stage, index) {
   `;
 }
 
+// Before the tutorial: the hero's one button is the tutorial, and every world is locked.
+function renderTutorialButton() {
+  return `
+    <button class="game-button continue-button tutorial-button" type="button" data-action="open-tutorial" data-theme="meadow">
+      <span class="continue-label">Start here</span>
+      <span class="continue-level">Tutorial</span>
+    </button>
+  `;
+}
+
 function renderWorldMap() {
   const completedCount = state.progressStore.completedIds().length;
   const perfectedCount = state.progressStore.perfectedIds().length;
-  const next = currentLevel();
+  const needsTutorial = !tutorialDone();
+  const next = needsTutorial ? null : currentLevel();
   const finished = completedCount === LEVELS.length;
   const cards = STAGES.map(renderWorldCard).join("");
   state.fresh.unlockedStage = null; // consumed: the card above carries data-fresh
@@ -353,13 +378,16 @@ function renderWorldMap() {
       <section class="world-hero">
         <div class="world-hero-copy">
           <h1>Pick a world</h1>
-          <p>Five worlds, five levels each. Clear every level in a world to open the next one.</p>
+          <p>${needsTutorial
+            ? "Five worlds, five levels each. First, a one-minute tutorial to show you the trick."
+            : "Five worlds, five levels each. Clear every level in a world to open the next one."}</p>
         </div>
         <div class="world-hero-side">
           <div class="journey" aria-label="${completedCount} of ${LEVELS.length} levels cleared, ${perfectedCount} perfect">
             <span class="journey-count"><strong>${completedCount}</strong>/${LEVELS.length} levels</span>
             <span class="journey-bar" aria-hidden="true"><span style="width: ${(completedCount / LEVELS.length) * 100}%"></span></span>
           </div>
+          ${needsTutorial ? renderTutorialButton() : ""}
           ${next ? `
             <button class="game-button continue-button" type="button" data-action="open-level" data-level-id="${next.id}" data-theme="${getStage(next.stageId).theme}">
               <span class="continue-label">${completedCount === 0 ? "Start" : "Continue"}</span>
@@ -370,7 +398,7 @@ function renderWorldMap() {
         </div>
       </section>
       <ol class="world-row" aria-label="Worlds">${cards}</ol>
-      <p class="unlock-note">Solve a level in the fewest possible premoves to perfect it and earn its <span class="perfect-star" aria-hidden="true">★</span></p>
+      <p class="unlock-note">Solve a level in the fewest possible premoves to perfect it and earn its <span class="perfect-star" aria-hidden="true">★</span>${needsTutorial ? "" : ' · <button class="text-button replay-tutorial" type="button" data-action="open-tutorial">Replay the tutorial</button>'}</p>
       ${import.meta.env.DEV ? '<p class="unlock-note">Development: locked worlds and levels open when clicked, for this session only. <button class="text-button dev-link" type="button" data-action="sound-board">Open the sound board</button></p>' : ""}
       <footer class="app-footer">Chess rules by chess.js · Opponent searches every reply to your premoves</footer>
     </main>
@@ -785,7 +813,27 @@ function countUpStats() {
   }
 }
 
-function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
+// The tutorial's "move this one here" arrow, in its own layer so right-click annotations
+// (which replace their layers' contents) can't wipe it.
+function renderTutorialHint(hint) {
+  if (!hint) {
+    return "";
+  }
+  const { shaft, head } = arrowGeometry(hint.from, hint.to);
+  const points = (list) => list.map(([x, y]) => `${+x.toFixed(4)},${+y.toFixed(4)}`).join(" ");
+  const [fromX, fromY] = squareCenter(hint.from);
+  const [toX, toY] = squareCenter(hint.to);
+  return `<svg class="board-hint" viewBox="0 0 8 8" aria-hidden="true">
+    <rect class="hint-target" x="${toX - 0.5}" y="${toY - 0.5}" width="1" height="1" rx="0.06"/>
+    <circle class="hint-source" cx="${fromX}" cy="${fromY}" r="0.46"/>
+    <g class="hint-arrow">
+      <polyline points="${points(shaft)}" fill="none" stroke-width="0.2" stroke-linejoin="miter"/>
+      <polygon points="${points(head)}"/>
+    </g>
+  </svg>`;
+}
+
+function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets, hint = null) {
   const board = boardRows(fen); // planning previews may not be legal chess positions
   const premoveSquares = new Set(premoves.flatMap((move) => [move.from, move.to]));
   const lastMoveSquares = new Set(lastMove ? [lastMove.from, lastMove.to] : []);
@@ -834,6 +882,7 @@ function renderBoard(fen, premoves, lastMove, selectedSquare, legalTargets) {
   return `<div class="board" role="group" aria-label="Chessboard">
     <svg class="board-highlights" viewBox="0 0 8 8" aria-hidden="true">${layers.highlights}</svg>
     ${squares.join("")}
+    ${renderTutorialHint(hint)}
     <svg class="board-arrows" viewBox="0 0 8 8" aria-hidden="true">${layers.arrows}</svg>
   </div>`;
 }
@@ -943,6 +992,9 @@ function renderOutcome() {
   }
 
   const victory = outcome === "victory"; // otherwise a defeat: only checkmate solves a level
+  if (state.tutorial) {
+    return renderTutorialOutcome(victory);
+  }
   const { perfect, minimumMoves, movesUsed } = state.snapshot;
   if (victory && perfect) {
     return `
@@ -974,6 +1026,37 @@ function renderOutcome() {
         <button class="secondary-button" type="button" data-action="retry-puzzle">Retry level</button>
         ${victory ? renderForwardButton() : ""}
         <button class="text-button" type="button" data-action="open-stage" data-stage-id="${state.level.stageId}">Level map</button>
+      </div>
+    </div>
+  `;
+}
+
+// The tutorial's result: always a mate (only the guided line can be queued), but a defeat
+// still gets a way to try again rather than a dead end.
+function renderTutorialOutcome(victory) {
+  const error = state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : "";
+  if (!victory) {
+    return `
+      <div class="outcome-card is-defeat" role="status">
+        <p class="eyebrow">Tutorial</p>
+        <h3>Not this time</h3>
+        <p>${escapeHTML(state.snapshot.message)}</p>
+        ${error}
+        <div class="outcome-actions">
+          <button class="primary-button" type="button" data-action="retry-puzzle">Try again</button>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="outcome-card is-perfect is-tutorial-complete ${state.revealOutcome ? "is-revealing" : ""}" role="status">
+      <p class="eyebrow">${escapeHTML(COMPLETE_CARD.eyebrow)}</p>
+      <h3><span class="perfect-star" aria-hidden="true">★</span> ${escapeHTML(COMPLETE_CARD.title)}</h3>
+      <p>${escapeHTML(COMPLETE_CARD.text)}</p>
+      ${error}
+      <div class="outcome-actions">
+        <button class="primary-button" type="button" data-action="finish-tutorial">To the worlds <span aria-hidden="true">→</span></button>
+        <button class="secondary-button" type="button" data-action="retry-puzzle">Play again</button>
       </div>
     </div>
   `;
@@ -1011,21 +1094,25 @@ function renderPuzzle() {
   const legalTargets = planning && state.selectedSquare
     ? state.session.legalMovesFrom(state.selectedSquare).map((move) => move.to)
     : [];
+  const step = state.tutorial ? tutorialStep(snapshot.premoves) : null;
   const board = renderBoard(
     snapshot.fen,
     planning ? snapshot.premoves : [],
     snapshot.lastMove,
     state.selectedSquare,
     legalTargets,
+    planning && !state.tutorialIntro ? step?.next : null,
   );
   const moveCount = snapshot.premoves.length;
 
   const stage = getStage(state.level.stageId);
+  const coach = !state.tutorial || snapshot.phase === "complete" || snapshot.phase === "error" ? null
+    : planning ? step.coach : PLAYING_COACH;
   return `
     ${renderHeader()}
-    <main class="puzzle-screen" data-theme="${stage.theme}">
+    <main class="puzzle-screen ${state.tutorial ? "is-tutorial" : ""}" data-theme="${stage.theme}">
       <div class="game-layout">
-        <div class="puzzle-heading">
+        ${state.tutorial ? renderTutorialHeading() : `<div class="puzzle-heading">
           <button class="back-button" type="button" data-action="open-stage" data-stage-id="${stage.id}" aria-label="Back to ${escapeHTML(stage.name)}" ${snapshot.phase === "playing" ? "disabled" : ""}>
             <span aria-hidden="true">←</span> <span class="back-label">${escapeHTML(stage.name)}</span>
           </button>
@@ -1040,7 +1127,7 @@ function renderPuzzle() {
             <span class="par-chip is-attempts">${plural(state.progressStore.attemptCount(state.level.id), "attempt")}</span>
             ${state.progressStore.isPerfected(state.level.id) ? '<span class="par-chip is-perfect">★ Perfected</span>' : ""}
           </p>
-        </div>
+        </div>`}
 
         <section class="board-column" aria-label="Puzzle board">
           <div class="board-frame">
@@ -1050,7 +1137,8 @@ function renderPuzzle() {
           </div>
         </section>
 
-        <aside class="control-panel">
+        <aside class="control-panel ${coach ? "has-coach" : ""}">
+          ${coach ? renderCoach(coach, state.interactionError) : ""}
           <div class="panel-top">
             <div>
               <p class="eyebrow">${planning ? "Plan your line" : snapshot.phase === "playing" ? "Executing" : "Result"}</p>
@@ -1062,9 +1150,9 @@ function renderPuzzle() {
             ? "Queue the moves you think will lead to checkmate. The board previews your pieces as you go."
             : "Your moves and the opponent's replies are being played in order."}</p>` : ""}
 
-          ${state.interactionError ? `<p class="inline-error" role="alert">${escapeHTML(state.interactionError)}</p>` : ""}
+          ${state.interactionError && !coach ? `<p class="inline-error" role="alert">${escapeHTML(state.interactionError)}</p>` : ""}
           ${state.executionError && snapshot.phase !== "error" ? `<p class="inline-error" role="alert">${escapeHTML(state.executionError)}</p>` : ""}
-          ${renderOutcome()}
+          ${coach && snapshot.phase === "playing" ? "" : renderOutcome()}
 
           <div class="move-list-wrap" role="region" tabindex="0" aria-live="polite" aria-label="Queued premoves">
             ${renderPremoves()}
@@ -1072,7 +1160,7 @@ function renderPuzzle() {
 
           ${planning ? `
             <div class="planning-actions">
-              <button class="primary-button submit-button" type="button" data-action="submit" ${moveCount === 0 ? "disabled" : ""}>
+              <button class="primary-button submit-button ${step && !step.next ? "is-beckoning" : ""}" type="button" data-action="submit" ${moveCount === 0 || (step && step.next) ? "disabled" : ""}>
                 <span class="submit-label">I'm done premoving</span><span class="submit-short-label" aria-hidden="true">Done</span> <span aria-hidden="true">→</span>
               </button>
               <button class="secondary-button" type="button" data-action="undo" ${moveCount === 0 ? "disabled" : ""}>
@@ -1084,7 +1172,60 @@ function renderPuzzle() {
         </aside>
       </div>
       ${renderPromotionDialog()}
+      ${state.tutorialIntro ? renderTutorialIntro() : ""}
     </main>
+  `;
+}
+
+function renderTutorialHeading() {
+  return `
+    <div class="puzzle-heading">
+      <button class="back-button" type="button" data-action="home" aria-label="Back to the world map" ${state.snapshot.phase === "playing" ? "disabled" : ""}>
+        <span aria-hidden="true">←</span> <span class="back-label">All worlds</span>
+      </button>
+      <p class="level-kicker">
+        <span class="level-badge tutorial-badge" aria-hidden="true">?</span>
+        <span class="level-kicker-text">Tutorial</span>
+      </p>
+      <h1>${escapeHTML(state.puzzle.title)}</h1>
+      <p class="par-line"><span class="par-chip">Tutorial</span><span class="par-chip is-attempts">About a minute</span></p>
+    </div>
+  `;
+}
+
+// The coach: a pawn with a speech bubble at the top of the panel, saying what to do next. A
+// nudge (a move the tutorial didn't ask for) takes the title's place, so the panel keeps its
+// height and the board doesn't jump.
+function renderCoach({ title, text }, nudge = "") {
+  const image = pieceImage("w", "p");
+  return `
+    <div class="coach" role="status" aria-live="polite">
+      <span class="coach-avatar" aria-hidden="true">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols.w.p}</span>
+      <div class="coach-bubble">
+        <p class="coach-title ${nudge ? "is-nudge" : ""}" ${nudge ? 'role="alert"' : ""}>${escapeHTML(nudge || title)}</p>
+        <p class="coach-text">${escapeHTML(text)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderTutorialIntro() {
+  const image = pieceImage("w", "p");
+  return `
+    <div class="modal-backdrop tutorial-backdrop" role="presentation">
+      <section class="tutorial-intro" role="dialog" aria-modal="true" aria-labelledby="tutorial-intro-title" data-theme="meadow">
+        <div class="tutorial-intro-scene" aria-hidden="true">
+          ${renderScene("meadow")}
+          <span class="tutorial-intro-mascot">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols.w.p}</span>
+        </div>
+        <div class="tutorial-intro-body">
+          <p class="eyebrow">${escapeHTML(TUTORIAL_INTRO.eyebrow)}</p>
+          <h2 id="tutorial-intro-title">${escapeHTML(TUTORIAL_INTRO.title)}</h2>
+          ${TUTORIAL_INTRO.paragraphs.map((text) => `<p>${escapeHTML(text)}</p>`).join("")}
+          <button class="game-button tutorial-start" type="button" data-action="tutorial-start" autofocus>${escapeHTML(TUTORIAL_INTRO.button)} <span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+    </div>
   `;
 }
 
@@ -1181,6 +1322,9 @@ function render() {
   } else if (state.screen === "sounds" && import.meta.env.DEV) {
     app.innerHTML = renderSoundBoard();
   }
+  if (state.tutorialIntro && state.screen === "puzzle") {
+    app.querySelector(".tutorial-start")?.focus({ preventScroll: true }); // a dialog takes focus
+  }
   if (state.screen === "stats" && state.statsIntro) {
     state.statsIntro = false;
     countUpStats();
@@ -1262,6 +1406,9 @@ function goBack() {
       render();
     } else if (state.snapshot?.phase === "playing") {
       syncHistory(); // can't leave mid-line: put the entry back
+    } else if (state.tutorial) {
+      sounds.play("back");
+      openWorldMap();
     } else {
       sounds.play("back");
       openStage(state.level.stageId);
@@ -1429,6 +1576,7 @@ async function initializeApp() {
     if (!state.progressStore) {
       state.progressStore = createProgressStore(undefined, { allowDevUnlock: import.meta.env.DEV });
     }
+    state.tutorialStore ??= createTutorialStore(undefined, { progress: state.progressStore });
     // The premove-aware opponent is bundled WebAssembly; loading takes a few milliseconds.
     state.engine = await loadPremoveEngine();
     state.screen = "index";
@@ -1442,6 +1590,8 @@ async function initializeApp() {
 }
 
 function clearPuzzle() {
+  state.tutorial = false;
+  state.tutorialIntro = false;
   state.level = null;
   state.puzzle = null;
   state.session = null;
@@ -1460,7 +1610,7 @@ function openWorldMap() {
 
 function openStage(id) {
   const stage = getStage(id);
-  if (!state.progressStore.isStageUnlocked(stage.id) && !import.meta.env.DEV) {
+  if (!(state.progressStore.isStageUnlocked(stage.id) && tutorialDone()) && !import.meta.env.DEV) {
     return;
   }
   navigate(() => {
@@ -1474,7 +1624,7 @@ function openLevel(id, { transition = true } = {}) {
   if (import.meta.env.DEV && !state.progressStore.isUnlocked(id)) {
     state.progressStore.unlockForDevelopment(id);
   }
-  if (!state.progressStore.isUnlocked(id)) {
+  if (!state.progressStore.isUnlocked(id) || (!tutorialDone() && !import.meta.env.DEV)) {
     return;
   }
   const level = getLevel(id);
@@ -1483,6 +1633,23 @@ function openLevel(id, { transition = true } = {}) {
     state.screen = "puzzle";
   };
   if (transition && state.screen !== "puzzle") {
+    navigate(show);
+  } else {
+    show();
+    render();
+  }
+}
+
+// The tutorial plays on the puzzle screen with a coach in the panel. It opens with a welcome
+// card the first time; "Play again" skips straight to the board.
+function openTutorial({ intro = true } = {}) {
+  const show = () => {
+    resetLevel(TUTORIAL_LEVEL);
+    state.tutorial = true;
+    state.tutorialIntro = intro;
+    state.screen = "puzzle";
+  };
+  if (state.screen !== "puzzle") {
     navigate(show);
   } else {
     show();
@@ -1500,6 +1667,8 @@ function resetLevel(level) {
   state.pendingPieceMove = null;
   state.pendingCelebration = null;
   state.revealOutcome = false;
+  state.tutorial = false;
+  state.tutorialIntro = false;
   state.level = level;
   state.stage = getStage(level.stageId);
   state.puzzle = level.puzzle;
@@ -1527,6 +1696,14 @@ function queueSelectedMove(from, to, promotion) {
 }
 
 function attemptMove(from, to) {
+  // the tutorial only takes the move its arrow points at
+  if (state.tutorial && !isTutorialMove(state.snapshot.premoves, { from, to })) {
+    state.interactionError = tutorialStep(state.snapshot.premoves).next ? WRONG_MOVE_MESSAGE : PLAN_COMPLETE_MESSAGE;
+    sounds.play("illegal");
+    state.selectedSquare = null;
+    render();
+    return;
+  }
   const options = state.session.legalMovesFrom(from).filter((move) => move.to === to);
   if (options.length === 0) {
     state.interactionError = `That move is not legal from ${from}.`;
@@ -1545,7 +1722,7 @@ function attemptMove(from, to) {
 }
 
 function selectSquare(square) {
-  if (state.screen !== "puzzle" || state.snapshot.phase !== "planning" || state.promotionRequest) {
+  if (state.screen !== "puzzle" || state.snapshot.phase !== "planning" || state.promotionRequest || state.tutorialIntro) {
     return;
   }
   state.interactionError = "";
@@ -1591,13 +1768,25 @@ function recordWin(level, perfect) {
   }
 }
 
+// The tutorial's mate opens the worlds; the first time, World 1's card unlocks with a burst
+// when the world map shows next.
+function finishTutorial() {
+  const firstTime = !state.tutorialStore.isDone();
+  if (firstTime) {
+    state.fresh.unlockedStage = "1";
+  }
+  state.tutorialStore.markDone();
+}
+
 async function submitPremoves() {
   sounds.play("submit");
   state.interactionError = "";
   state.executionError = "";
-  // every submitted line counts as an attempt; shown on the puzzle page
+  // every submitted line counts as an attempt; shown on the puzzle page (not the tutorial)
   try {
-    state.progressStore.recordAttempt(state.level.id);
+    if (!state.tutorial) {
+      state.progressStore.recordAttempt(state.level.id);
+    }
     state.progressError = "";
   } catch (error) {
     state.progressError = error.message;
@@ -1637,7 +1826,11 @@ async function submitPremoves() {
         state.snapshot = snapshot;
         if (snapshot.phase === "complete" && snapshot.outcome === "victory") {
           try {
-            recordWin(state.level, snapshot.perfect);
+            if (state.tutorial) {
+              finishTutorial();
+            } else {
+              recordWin(state.level, snapshot.perfect);
+            }
             state.progressError = "";
           } catch (error) {
             state.progressError = error.message;
@@ -1718,7 +1911,21 @@ app.addEventListener("click", (event) => {
       render();
     } else if (action === "retry-puzzle") {
       sounds.play("click");
-      openLevel(state.level.id);
+      if (state.tutorial) {
+        openTutorial({ intro: false });
+      } else {
+        openLevel(state.level.id);
+      }
+    } else if (action === "open-tutorial") {
+      sounds.play("open");
+      openTutorial();
+    } else if (action === "tutorial-start") {
+      sounds.play("click");
+      state.tutorialIntro = false;
+      render();
+    } else if (action === "finish-tutorial") {
+      sounds.play("open");
+      openWorldMap();
     } else if (action === "next-level") {
       const next = nextLevelInStage();
       if (next) {
@@ -2030,7 +2237,11 @@ document.addEventListener("keydown", (event) => {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
     return;
   }
-  if (event.key === "Escape" && state.screen === "stage") {
+  if (event.key === "Escape" && state.tutorialIntro && state.screen === "puzzle") {
+    sounds.play("click"); // Escape closes the welcome card, like a dialog
+    state.tutorialIntro = false;
+    render();
+  } else if (event.key === "Escape" && state.screen === "stage") {
     sounds.play("back");
     openWorldMap();
   } else if (event.key === "Escape" && state.screen === "stats") {

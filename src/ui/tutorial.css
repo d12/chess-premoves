@@ -1,0 +1,329 @@
+/* ---------- Tutorial ----------
+   The world map's "Start here · Tutorial" button, the welcome card, the coach in the puzzle
+   panel, the hint arrow on the board and the submit button's nudge. */
+
+/* the world map's tutorial button pulses until it's pressed */
+.tutorial-button {
+  position: relative;
+  isolation: isolate;
+}
+
+.tutorial-button::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -4px;
+  border-radius: 18px;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #4f9a36) 55%, transparent);
+  animation: tutorial-ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes tutorial-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #4f9a36) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+.replay-tutorial {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- the welcome card ---- */
+
+.tutorial-intro {
+  width: min(440px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5), 0 22px 60px rgba(32, 43, 27, 0.3);
+  animation: outcome-pop 320ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+
+.tutorial-intro-scene {
+  position: relative;
+  height: clamp(70px, 22vh, 150px);
+  flex: none;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+}
+
+.tutorial-intro-mascot {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  height: 72%;
+  translate: -50% 0;
+  animation: landmark-bob 2.6s ease-in-out infinite;
+}
+
+.tutorial-intro-mascot img {
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 5px 0 rgba(0, 0, 0, 0.2));
+}
+
+.tutorial-intro-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(14px, 3.4vh, 24px) clamp(16px, 5vw, 26px) clamp(16px, 3.6vh, 24px);
+}
+
+.tutorial-intro .eyebrow {
+  color: var(--accent);
+}
+
+.tutorial-intro h2 {
+  margin: 2px 0 clamp(6px, 1.6vh, 12px);
+  color: var(--ink);
+  font-family: var(--font-game);
+  font-size: clamp(1.5rem, 4.4vh, 2rem);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.tutorial-intro p:not(.eyebrow) {
+  margin: 0 0 clamp(6px, 1.4vh, 10px);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.tutorial-start {
+  width: 100%;
+  margin-top: clamp(8px, 2vh, 14px);
+}
+
+/* ---- the coach: a pawn with a speech bubble at the top of the panel ---- */
+
+.control-panel.has-coach .panel-top,
+.control-panel.has-coach .panel-copy,
+.puzzle-screen.is-tutorial .panel-footnote {
+  display: none !important;
+}
+
+/* The panel holds the coach as well as the moves, so it reserves room for the tallest step:
+   the board keeps one size from the first step to the result. */
+.puzzle-screen.is-tutorial .game-layout {
+  --panel-reserve: 222px;
+}
+
+@container puzzle (min-width: 560px) {
+  .puzzle-screen.is-tutorial .game-layout {
+    --panel-reserve: 190px;
+  }
+}
+
+.coach {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.coach-avatar {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--accent, #4f9a36);
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--sky-top, #74c6ef), var(--sky-bottom, #d4f0ff));
+  font-size: 1.4rem;
+}
+
+.coach-avatar img {
+  width: 82%;
+  margin-top: 14%;
+  display: block;
+}
+
+.coach-bubble {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  border-radius: 12px;
+  background: var(--accent-soft, #e2f2d6);
+}
+
+/* the bubble's tail, pointing at the pawn */
+.coach-bubble::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--accent, #4f9a36) 30%, transparent);
+  background: var(--accent-soft, #e2f2d6);
+  rotate: 45deg;
+}
+
+.coach-title {
+  margin: 0;
+  color: var(--accent-ink, #1f4714);
+  font-family: var(--font-game);
+  font-size: 0.98rem;
+  line-height: 1.15;
+}
+
+.coach-title.is-nudge {
+  color: #b23a2a;
+  animation: nudge-shake 320ms ease-in-out;
+}
+
+@keyframes nudge-shake {
+  25% { translate: -3px 0; }
+  75% { translate: 3px 0; }
+}
+
+.coach-text {
+  margin: 1px 0 0;
+  color: var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.38;
+}
+
+/* while the line plays there's no run-status line, so the coach's panel pops the move */
+.control-panel.has-coach .move-list li.is-current {
+  animation: current-move-pop 380ms cubic-bezier(0.25, 1.6, 0.5, 1);
+}
+
+@container puzzle (min-aspect-ratio: 5/4) or ((min-aspect-ratio: 9/8) and (min-height: 300px)) or ((min-aspect-ratio: 27/25) and (min-height: 700px)) {
+  .coach {
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .coach-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .coach-bubble {
+    padding: 10px 14px 12px;
+    border-radius: 14px;
+  }
+
+  .coach-bubble::before {
+    top: 18px;
+  }
+
+  .coach-title {
+    font-size: 1.25rem;
+  }
+
+  .coach-text {
+    margin-top: 3px;
+    font-size: 0.86rem;
+    line-height: 1.5;
+  }
+
+  @container puzzle (max-height: 560px) {
+    .coach-avatar {
+      width: 38px;
+      height: 38px;
+    }
+
+    .coach-bubble {
+      padding: 6px 10px 7px;
+    }
+
+    .coach-bubble::before {
+      top: 12px;
+    }
+
+    .coach-title {
+      font-size: 0.98rem;
+    }
+
+    .coach-text {
+      font-size: 0.76rem;
+      line-height: 1.38;
+    }
+  }
+}
+
+/* ---- the hint arrow: which piece to move, and where ---- */
+
+.board-hint {
+  --hint: #3fae2a;
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hint-target {
+  fill: var(--hint);
+  opacity: 0.32;
+  animation: hint-glow 1.4s ease-in-out infinite;
+}
+
+.hint-source {
+  fill: none;
+  stroke: var(--hint);
+  stroke-width: 0.07;
+  opacity: 0.9;
+}
+
+.hint-arrow {
+  opacity: 0.85;
+  animation: hint-nudge 1.4s ease-in-out infinite;
+}
+
+.hint-arrow polyline {
+  stroke: var(--hint);
+}
+
+.hint-arrow polygon {
+  fill: var(--hint);
+}
+
+@keyframes hint-glow {
+  50% { opacity: 0.55; }
+}
+
+@keyframes hint-nudge {
+  50% { opacity: 0.55; }
+}
+
+/* the submit button, once the whole line is queued */
+.submit-button.is-beckoning {
+  animation: beckon 1.5s ease-in-out infinite;
+}
+
+@keyframes beckon {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #4f9a36) 50%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent, #4f9a36) 20%, transparent); }
+}
+
+.tutorial-badge {
+  font-family: var(--font-game);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-button::after,
+  .hint-target,
+  .hint-arrow,
+  .submit-button.is-beckoning,
+  .tutorial-intro-mascot,
+  .coach-title.is-nudge {
+    animation: none;
+  }
+}
