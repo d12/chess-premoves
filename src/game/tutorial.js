@@ -77,6 +77,13 @@ export const COMPLETE_CARD = Object.freeze({
 export const WRONG_MOVE_MESSAGE = "Not that one! Follow the arrow.";
 export const PLAN_COMPLETE_MESSAGE = "That's the whole plan. Hit Done!";
 
+// Everything the coach can say, while planning or playing, including the nudges that replace
+// its title. The coach is sized for the longest of each, so its height never changes.
+export const COACH_TITLES = Object.freeze([
+  ...PLANNING_COACH.map((coach) => coach.title), PLAYING_COACH.title, WRONG_MOVE_MESSAGE, PLAN_COMPLETE_MESSAGE,
+]);
+export const COACH_TEXTS = Object.freeze([...PLANNING_COACH.map((coach) => coach.text), PLAYING_COACH.text]);
+
 const asUci = (move) => `${move.from}${move.to}${move.promotion ?? ""}`;
 
 /**

@@ -103,22 +103,17 @@
 
 /* ---- the coach: a pawn with a speech bubble at the top of the panel ---- */
 
-.control-panel.has-coach .panel-top,
-.control-panel.has-coach .panel-copy,
-.puzzle-screen.is-tutorial .panel-footnote {
+.control-panel.has-coach .panel-top {
   display: none !important;
 }
 
-/* The panel holds the coach as well as the moves, so it reserves room for the tallest step:
-   the board keeps one size from the first step to the result. */
+/* The panel holds the coach as well as the tray, so on portrait screens its row reserves
+   exactly what the planning panel needs (--tutorial-panel, measured by fitTutorialPanel in
+   main.js; 240px until then), even past the usual 36% cap: the board keeps one size from the
+   first step to the result. */
 .puzzle-screen.is-tutorial .game-layout {
-  --panel-reserve: 222px;
-}
-
-@container puzzle (min-width: 560px) {
-  .puzzle-screen.is-tutorial .game-layout {
-    --panel-reserve: 190px;
-  }
+  --panel-reserve: var(--tutorial-panel, 240px);
+  --panel-cap: 100cqh;
 }
 
 .coach {
@@ -146,6 +141,19 @@
   width: 82%;
   margin-top: 14%;
   display: block;
+}
+
+/* the real line and invisible copies of every other the coach can say, in one cell */
+.coach-stack {
+  display: grid;
+}
+
+.coach-stack > * {
+  grid-area: 1 / 1;
+}
+
+.coach-sizer {
+  visibility: hidden;
 }
 
 .coach-bubble {
@@ -197,12 +205,12 @@
   line-height: 1.38;
 }
 
-/* while the line plays there's no run-status line, so the coach's panel pops the move */
-.control-panel.has-coach .move-list li.is-current {
-  animation: current-move-pop 380ms cubic-bezier(0.25, 1.6, 0.5, 1);
-}
-
 @container puzzle (min-aspect-ratio: 5/4) or ((min-aspect-ratio: 9/8) and (min-height: 300px)) or ((min-aspect-ratio: 27/25) and (min-height: 700px)) {
+  /* beside the board the panel's height can't resize the board, so the coach fits its line */
+  .coach-sizer {
+    display: none;
+  }
+
   .coach {
     gap: 12px;
     margin-bottom: 4px;
@@ -232,10 +240,29 @@
     line-height: 1.5;
   }
 
+  /* phones on their side: the coach, the tray and Done/Undo share a short column, so the pawn
+     steps aside to give the words the width */
   @container puzzle (max-height: 560px) {
-    .coach-avatar {
-      width: 38px;
-      height: 38px;
+    .control-panel.has-coach {
+      gap: 8px;
+    }
+
+    .coach {
+      margin-bottom: 0;
+    }
+
+    .coach-avatar,
+    .coach-bubble::before {
+      display: none;
+    }
+
+    .coach-title {
+      font-size: 0.92rem;
+    }
+
+    .control-panel.has-coach:not(.is-complete) .premove-tray {
+      --tile-w: 48px;
+      --tile-h: 52px;
     }
 
     .coach-bubble {
@@ -246,13 +273,9 @@
       top: 12px;
     }
 
-    .coach-title {
-      font-size: 0.98rem;
-    }
-
     .coach-text {
-      font-size: 0.76rem;
-      line-height: 1.38;
+      font-size: 0.72rem;
+      line-height: 1.32;
     }
   }
 }

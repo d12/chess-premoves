@@ -6,20 +6,22 @@ import {
   annotationColor, annotationLayers, arrowGeometry, EMPTY_ANNOTATIONS, hasAnnotations, squareCenter, toggleArrow,
   toggleHighlight,
 } from "./game/annotations.js";
+import { chessComAnalysisUrl } from "./game/links.js";
 import { boardRows, parsePlacement } from "./game/premoveRules.js";
 import { createPremoveGame } from "./game/session.js";
 import { createProgressStore } from "./game/progress.js";
 import { getLevel, getStage, LEVELS, nextLevel, nextStage, STAGES } from "./game/stages.js";
 import { computeStats, loadSeenBadges, saveSeenBadges } from "./game/stats.js";
 import {
-  COMPLETE_CARD, createTutorialStore, isTutorialMove, PLAN_COMPLETE_MESSAGE, PLAYING_COACH, TUTORIAL_INTRO,
-  TUTORIAL_LEVEL, tutorialStep, WRONG_MOVE_MESSAGE,
+  COACH_TEXTS, COACH_TITLES, COMPLETE_CARD, createTutorialStore, isTutorialMove, PLAN_COMPLETE_MESSAGE, PLAYING_COACH,
+  TUTORIAL_INTRO, TUTORIAL_LEVEL, tutorialStep, WRONG_MOVE_MESSAGE,
 } from "./game/tutorial.js";
 import { renderScene, THEME_CONFETTI } from "./ui/scenery.js";
 import "@fontsource/lilita-one/latin-400.css";
 import "./style.css";
 import "./ui/worlds.css";
 import "./ui/stats.css";
+import "./ui/panel.css";
 import "./ui/tutorial.css";
 
 const app = document.querySelector("#app");
@@ -67,6 +69,7 @@ const state = {
   progressStore: null,
   tutorialStore: null, // whether the tutorial is done (it must be, before the worlds open)
   tutorial: false, // the puzzle screen is playing the tutorial (state.level is TUTORIAL_LEVEL)
+  tutorialPanelHeight: null, // px the tutorial's planning panel needs (see fitTutorialPanel)
   tutorialIntro: false, // the tutorial's welcome card is showing over the board
   stage: null, // the stage whose level map is open (screen "stage")
   level: null, // the level being played (screen "puzzle"); state.puzzle is level.puzzle
@@ -77,6 +80,7 @@ const state = {
   musicPreview: null, // development sound board: { world, scene } to audition
   // stats screen: which tab (narrow screens), where Back returns to (a stage id, or null for
   // the world map), the one-shot intro flag, and the badges that are new this visit
+  trayCount: 0, // premoves shown in the tray last render, so a newly queued one can pop in
   statsTab: "overview",
   statsReturn: null,
   statsIntro: false,
@@ -939,29 +943,80 @@ const PREMOVE_STATUS_LABELS = {
   "is-unused": "not needed",
 };
 
-function renderPremoves() {
-  if (state.snapshot.premoves.length === 0) {
-    return `<p class="empty-line">Your queued moves will appear here.</p>`;
+// The premove tray: the queued line as a row of chunky tiles (the piece that moves over the
+// square it goes to), like a combo or inventory bar. The puzzle's perfect count sets how
+// many slots there are: empty slots carry a faint star and the next one to fill pulses.
+// Going past perfect just adds tiles. Tapping the last tile undoes it.
+function premovePiece(move) {
+  if (move.san.startsWith("O-O")) {
+    return "k";
   }
-  return `
-    <ol class="move-list">
-      ${state.snapshot.premoves.map((move, index) => {
-        const status = premoveStatus(index);
-        const label = PREMOVE_STATUS_LABELS[status];
-        return `
-          <li class="${status}" ${status.startsWith("is-current") ? 'aria-current="step"' : ""}>
-            <span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(move.san)}</strong>${label ? `<em class="visually-hidden">, ${label}</em>` : ""}
-          </li>
-        `;
-      }).join("")}
-    </ol>
+  const letter = move.san[0];
+  return "KQRBN".includes(letter) ? letter.toLowerCase() : "p";
+}
+
+function premoveLabel(move) {
+  if (move.san.startsWith("O-O")) {
+    return move.san.replace(/[+#]/g, "");
+  }
+  return `${move.to}${move.promotion ? `=${move.promotion.toUpperCase()}` : ""}`;
+}
+
+function renderTrayTile(move, index, { par, last, planning, playerColor, fresh }) {
+  const status = premoveStatus(index);
+  const label = PREMOVE_STATUS_LABELS[status];
+  const image = pieceImage(playerColor, premovePiece(move));
+  const inPar = par !== null && index < par;
+  const face = `
+    <span class="tile-step" aria-hidden="true">${index + 1}</span>
+    <span class="tile-piece" aria-hidden="true">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols[playerColor][premovePiece(move)]}</span>
+    <span class="tile-square" aria-hidden="true">${escapeHTML(premoveLabel(move))}</span>
+    <span class="visually-hidden">${escapeHTML(move.san)}${label ? `, ${label}` : ""}</span>
   `;
+  const classes = `tray-tile ${status} ${inPar ? "is-par" : ""} ${fresh && !prefersReducedMotion() ? "is-new" : ""}`;
+  return `<li class="tray-slot" ${status.startsWith("is-current") ? 'aria-current="step"' : ""}>${planning && last
+    ? `<button class="${classes} is-last" type="button" data-action="undo" title="Undo ${escapeHTML(move.san)}">${face}<span class="tile-undo" aria-hidden="true">×</span><span class="visually-hidden">, tap to undo</span></button>`
+    : `<span class="${classes}">${face}</span>`}</li>`;
+}
+
+function renderPremoves() {
+  const { premoves, phase, minimumMoves, playerColor } = state.snapshot;
+  const planning = phase === "planning";
+  const par = minimumMoves;
+  const added = planning && premoves.length > state.trayCount;
+  state.trayCount = premoves.length;
+  const tiles = premoves.map((move, index) => renderTrayTile(move, index, {
+    par, planning, playerColor, last: index === premoves.length - 1, fresh: added && index === premoves.length - 1,
+  }));
+  // while planning, the rest of the perfect line shows as empty slots to fill
+  const empty = planning && par !== null ? Math.max(0, par - premoves.length) : 0;
+  const slots = Array.from({ length: empty }, (_, offset) => `
+    <li class="tray-slot" aria-hidden="true"><span class="tray-tile is-empty is-par ${offset === 0 ? "is-next" : ""}"><span class="tile-star">★</span></span></li>
+  `);
+  if (planning && par === null && premoves.length === 0) {
+    slots.push('<li class="tray-slot" aria-hidden="true"><span class="tray-tile is-empty is-next"></span></li>');
+  }
+  return `<ol class="premove-tray" aria-label="Your premoves">${tiles.join("")}${slots.join("")}</ol>`;
+}
+
+// The count against the perfect line, top right of the panel: "2/3 ★", grey once over.
+function renderParMeter() {
+  const { premoves, minimumMoves } = state.snapshot;
+  const count = premoves.length;
+  if (minimumMoves === null) {
+    return `<span class="par-meter">${plural(count, "premove")}</span>`;
+  }
+  const over = count > minimumMoves;
+  return `<span class="par-meter ${over ? "is-over" : count === minimumMoves ? "is-full" : ""}" title="${over ? "More premoves than a perfect solve needs" : `Perfect is ${minimumMoves}`}">
+    <span aria-hidden="true">${count}<small>/${minimumMoves}</small> <span class="par-star">★</span></span>
+    <span class="visually-hidden">${plural(count, "premove")} queued; a perfect solve takes ${minimumMoves}</span>
+  </span>`;
 }
 
 // Scrolls the move list (a horizontal strip or a vertical list) to keep the premove being
 // played in view, without moving anything else on the page.
 function keepCurrentPremoveVisible(list) {
-  const current = list?.querySelector(".move-list li[aria-current]");
+  const current = list?.querySelector(".tray-slot[aria-current]");
   if (!current) {
     return false;
   }
@@ -979,7 +1034,7 @@ function renderOutcome() {
     return "";
   }
   if (phase === "playing") {
-    return `<div class="run-status" aria-live="polite"><span class="spinner"></span>Playing your line…</div>`;
+    return ""; // the panel's title row says it's playing
   }
   if (phase === "error") {
     return `
@@ -1000,7 +1055,10 @@ function renderOutcome() {
     return `
     <div class="outcome-card is-perfect ${state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">Perfect solve</p>
-      <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
+      <div class="outcome-heading">
+        <h3><span class="perfect-star" aria-hidden="true">★</span> Perfect!</h3>
+        ${renderChessComLink()}
+      </div>
       <p>Checkmate in ${plural(minimumMoves, "premove")}, the fewest possible. Flawless vision.</p>
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
       <div class="outcome-actions">
@@ -1018,7 +1076,10 @@ function renderOutcome() {
   return `
     <div class="outcome-card ${victory ? "is-victory" : "is-defeat"} ${victory && state.revealOutcome ? "is-revealing" : ""}" role="status">
       <p class="eyebrow">${victory ? "Beautifully seen" : "Keep training"}</p>
-      <h3>${title}</h3>
+      <div class="outcome-heading">
+        <h3>${title}</h3>
+        ${victory ? renderChessComLink() : ""}
+      </div>
       <p>${escapeHTML(message)}</p>
       ${perfectHint}
       ${state.progressError ? `<p class="inline-error" role="alert">${escapeHTML(state.progressError)}</p>` : ""}
@@ -1029,6 +1090,13 @@ function renderOutcome() {
       </div>
     </div>
   `;
+}
+
+// After a win, beside the result's heading: the level's starting position on chess.com's
+// analysis board (the same URL ppz prints), in a new tab so the game stays where it is.
+function renderChessComLink() {
+  const href = escapeHTML(chessComAnalysisUrl(state.puzzle.fen));
+  return `<a class="chesscom-link" href="${href}" target="_blank" rel="noopener noreferrer" data-action="view-on-chesscom" aria-label="View on chess.com (opens in a new tab)"><span class="chesscom-link-verb">View on </span>chess.com <span class="external-icon" aria-hidden="true">↗</span></a>`;
 }
 
 // The tutorial's result: always a mate (only the guided line can be queued), but a defeat
@@ -1111,7 +1179,7 @@ function renderPuzzle() {
   return `
     ${renderHeader()}
     <main class="puzzle-screen ${state.tutorial ? "is-tutorial" : ""}" data-theme="${stage.theme}">
-      <div class="game-layout">
+      <div class="game-layout" ${state.tutorial && state.tutorialPanelHeight ? `style="--tutorial-panel: ${state.tutorialPanelHeight}px"` : ""}>
         ${state.tutorial ? renderTutorialHeading() : `<div class="puzzle-heading">
           <button class="back-button" type="button" data-action="open-stage" data-stage-id="${stage.id}" aria-label="Back to ${escapeHTML(stage.name)}" ${snapshot.phase === "playing" ? "disabled" : ""}>
             <span aria-hidden="true">←</span> <span class="back-label">${escapeHTML(stage.name)}</span>
@@ -1137,38 +1205,36 @@ function renderPuzzle() {
           </div>
         </section>
 
-        <aside class="control-panel ${coach ? "has-coach" : ""}">
+        <aside class="control-panel is-${snapshot.phase} ${coach ? "has-coach" : ""}">
           ${coach ? renderCoach(coach, state.interactionError) : ""}
-          <div class="panel-top">
-            <div>
-              <p class="eyebrow">${planning ? "Plan your line" : snapshot.phase === "playing" ? "Executing" : "Result"}</p>
-              <h2>${planning ? "Your premoves" : snapshot.phase === "playing" ? "Watch it unfold" : snapshot.outcome === "victory" ? "Solved" : "Not solved"}</h2>
+          ${snapshot.phase === "planning" || snapshot.phase === "playing" ? `
+            <div class="panel-top">
+              ${planning
+                ? "<h2>Your premoves</h2>"
+                : '<h2 class="run-status" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Playing your line…</h2>'}
+              ${renderParMeter()}
             </div>
-            <span class="move-count">${moveCount} ${moveCount === 1 ? "move" : "moves"}</span>
-          </div>
-          ${planning || snapshot.phase === "playing" ? `<p class="panel-copy">${planning
-            ? "Queue the moves you think will lead to checkmate. The board previews your pieces as you go."
-            : "Your moves and the opponent's replies are being played in order."}</p>` : ""}
-
+          ` : ""}
+          ${planning && moveCount === 0 && !coach ? '<p class="panel-hint">Move your pieces on the board to queue premoves.</p>' : ""}
           ${state.interactionError && !coach ? `<p class="inline-error" role="alert">${escapeHTML(state.interactionError)}</p>` : ""}
           ${state.executionError && snapshot.phase !== "error" ? `<p class="inline-error" role="alert">${escapeHTML(state.executionError)}</p>` : ""}
           ${coach && snapshot.phase === "playing" ? "" : renderOutcome()}
 
-          <div class="move-list-wrap" role="region" tabindex="0" aria-live="polite" aria-label="Queued premoves">
+          <div class="tray-wrap" role="region" aria-live="polite" aria-label="Queued premoves">
             ${renderPremoves()}
           </div>
 
           ${planning ? `
             <div class="planning-actions">
-              <button class="primary-button submit-button ${step && !step.next ? "is-beckoning" : ""}" type="button" data-action="submit" ${moveCount === 0 || (step && step.next) ? "disabled" : ""}>
-                <span class="submit-label">I'm done premoving</span><span class="submit-short-label" aria-hidden="true">Done</span> <span aria-hidden="true">→</span>
+              <button class="secondary-button undo-button" type="button" data-action="undo" aria-label="Undo last premove" title="Undo last premove" ${moveCount === 0 ? "disabled" : ""}>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 7H4.5V2.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 7a8 8 0 1 1-1.3 6.8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
               </button>
-              <button class="secondary-button" type="button" data-action="undo" ${moveCount === 0 ? "disabled" : ""}>
-                <span class="undo-label">Undo last move</span><span class="undo-short-label" aria-hidden="true">Undo</span>
+              <button class="primary-button submit-button ${step && !step.next ? "is-beckoning" : ""}" type="button" data-action="submit" ${moveCount === 0 || (step && step.next) ? "disabled" : ""}>
+                <span class="submit-label">I'm done premoving</span><span class="submit-short-label" aria-hidden="true">Done</span>
+                <svg class="submit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>
               </button>
             </div>
           ` : ""}
-          ${planning ? '<p class="panel-footnote">Moves that become illegal after the opponent replies will end the attempt.</p>' : ""}
         </aside>
       </div>
       ${renderPromotionDialog()}
@@ -1194,19 +1260,50 @@ function renderTutorialHeading() {
 }
 
 // The coach: a pawn with a speech bubble at the top of the panel, saying what to do next. A
-// nudge (a move the tutorial didn't ask for) takes the title's place, so the panel keeps its
-// height and the board doesn't jump.
+// nudge (a move the tutorial didn't ask for) takes the title's place. Invisible copies of every
+// title and text the coach can show sit under the real ones (.coach-sizer), so the bubble is
+// always as tall as its longest message: the panel keeps its height and the board doesn't jump.
 function renderCoach({ title, text }, nudge = "") {
   const image = pieceImage("w", "p");
+  const sizers = (lines, className) => lines
+    .map((line) => `<p class="${className} coach-sizer" aria-hidden="true">${escapeHTML(line)}</p>`).join("");
   return `
     <div class="coach" role="status" aria-live="polite">
       <span class="coach-avatar" aria-hidden="true">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols.w.p}</span>
       <div class="coach-bubble">
-        <p class="coach-title ${nudge ? "is-nudge" : ""}" ${nudge ? 'role="alert"' : ""}>${escapeHTML(nudge || title)}</p>
-        <p class="coach-text">${escapeHTML(text)}</p>
+        <div class="coach-stack">
+          <p class="coach-title ${nudge ? "is-nudge" : ""}" ${nudge ? 'role="alert"' : ""}>${escapeHTML(nudge || title)}</p>
+          ${sizers(COACH_TITLES, "coach-title")}
+        </div>
+        <div class="coach-stack">
+          <p class="coach-text">${escapeHTML(text)}</p>
+          ${sizers(COACH_TEXTS, "coach-text")}
+        </div>
       </div>
     </div>
   `;
+}
+
+// The tutorial's panel (coach, tray, Done/Undo) is taller than a level's, and on portrait
+// screens the board gets whatever height the panel's row leaves. So the tutorial reserves
+// exactly what its planning panel needs (--tutorial-panel, read by ui/tutorial.css): the coach
+// never changes height, and the playback and result panels are smaller, so the board keeps
+// one size from the first step to the result. Measured after each planning render and on
+// resize; the panel is aligned to the end of its row, so its height is its content's.
+function fitTutorialPanel() {
+  if (state.screen !== "puzzle" || !state.tutorial || state.snapshot?.phase !== "planning") {
+    return;
+  }
+  const panel = app.querySelector(".control-panel");
+  const layout = app.querySelector(".game-layout");
+  if (!panel || !layout) {
+    return;
+  }
+  const height = Math.ceil(panel.getBoundingClientRect().height);
+  if (height > 0 && height !== state.tutorialPanelHeight) {
+    state.tutorialPanelHeight = height;
+    layout.style.setProperty("--tutorial-panel", `${height}px`);
+  }
 }
 
 function renderTutorialIntro() {
@@ -1299,8 +1396,8 @@ function celebrateMate({ square, perfect }) {
 function render() {
   const pendingMove = state.pendingPieceMove;
   state.pendingPieceMove = null;
-  const previousList = app.querySelector(".move-list-wrap");
-  const previousMoveCount = previousList?.querySelectorAll(".move-list li").length ?? 0;
+  const previousList = app.querySelector(".tray-wrap");
+  const previousMoveCount = previousList?.querySelectorAll(".tray-tile:not(.is-empty)").length ?? 0;
   const previousScroll = previousList && { left: previousList.scrollLeft, top: previousList.scrollTop };
   const sourcePiece = pendingMove && state.screen === "puzzle"
     ? app.querySelector(`[data-square="${pendingMove.from}"] .piece`)
@@ -1322,6 +1419,7 @@ function render() {
   } else if (state.screen === "sounds" && import.meta.env.DEV) {
     app.innerHTML = renderSoundBoard();
   }
+  fitTutorialPanel();
   if (state.tutorialIntro && state.screen === "puzzle") {
     app.querySelector(".tutorial-start")?.focus({ preventScroll: true }); // a dialog takes focus
   }
@@ -1330,11 +1428,11 @@ function render() {
     countUpStats();
   }
 
-  const moveList = app.querySelector(".move-list-wrap");
+  const moveList = app.querySelector(".tray-wrap");
   if (keepCurrentPremoveVisible(moveList)) {
     // during playback the list follows the move being played
   } else if (moveList && previousScroll) {
-    const moveCount = moveList.querySelectorAll(".move-list li").length;
+    const moveCount = moveList.querySelectorAll(".tray-tile:not(.is-empty)").length;
     moveList.scrollTo(moveCount > previousMoveCount
       ? { left: moveList.scrollWidth, top: moveList.scrollHeight }
       : previousScroll);
@@ -1421,6 +1519,9 @@ function goBack() {
     openWorldMap();
   }
 }
+
+// Rotating or resizing changes how the coach wraps, so the tutorial re-fits its panel.
+window.addEventListener("resize", fitTutorialPanel);
 
 window.addEventListener("popstate", () => {
   if (ignoreNextPop) {
@@ -1664,6 +1765,7 @@ function resetLevel(level) {
   }
   state.annotations = EMPTY_ANNOTATIONS;
   state.drawingArrow = null;
+  state.trayCount = 0;
   state.pendingPieceMove = null;
   state.pendingCelebration = null;
   state.revealOutcome = false;
@@ -1926,6 +2028,8 @@ app.addEventListener("click", (event) => {
     } else if (action === "finish-tutorial") {
       sounds.play("open");
       openWorldMap();
+    } else if (action === "view-on-chesscom") {
+      sounds.play("click"); // the link opens chess.com in a new tab by itself
     } else if (action === "next-level") {
       const next = nextLevelInStage();
       if (next) {

@@ -301,7 +301,7 @@ p {
   grid-template-columns: minmax(0, 1fr);
   /* the controls' row keeps room for a result card, so the board stays the same size
      from planning through playback to the result instead of jumping around */
-  grid-template-rows: auto minmax(0, 1fr) minmax(min(var(--panel-reserve), 36cqh), auto);
+  grid-template-rows: auto minmax(0, 1fr) minmax(min(var(--panel-reserve), var(--panel-cap, 36cqh)), auto);
   gap: 8px;
 }
 
@@ -663,208 +663,6 @@ p {
   bottom: 3%;
 }
 
-/* ---------- Controls ----------
-   Compact by default: a strip of queued moves and one row of buttons. The wide layout
-   (below) turns this into a full side panel. */
-
-.control-panel {
-  grid-area: panel;
-  align-self: end;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 8px 24px rgba(48, 60, 42, 0.05);
-}
-
-.control-panel > :not(.move-list-wrap) {
-  flex-shrink: 0;
-}
-
-.panel-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.panel-top h2 {
-  margin: 0;
-  font-size: 0.9rem;
-  letter-spacing: -0.035em;
-}
-
-.move-count {
-  color: #747d70;
-  font-size: 0.69rem;
-  white-space: nowrap;
-}
-
-.panel-top .eyebrow,
-.panel-copy,
-.panel-footnote,
-.control-panel:has(.outcome-card) .panel-top,
-.control-panel:has(.run-status) .panel-top {
-  display: none;
-}
-
-.panel-copy {
-  min-height: 3.4em;
-  margin: 12px 0 17px;
-  color: var(--text-muted);
-  font-size: 0.79rem;
-  line-height: 1.6;
-}
-
-/* the queued moves: one horizontal strip, scrolled to the newest move */
-.move-list-wrap {
-  height: 42px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior: contain;
-  padding: 4px;
-  border: 1px solid #e0e5dc;
-  border-radius: 8px;
-  background: #f7f8f5;
-  scrollbar-width: none;
-  touch-action: pan-x;
-}
-
-.move-list-wrap::-webkit-scrollbar {
-  display: none;
-}
-
-.empty-line {
-  margin: 0 4px;
-  overflow: hidden;
-  color: #81897c;
-  font-size: 0.74rem;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.move-list {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 5px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.move-list li {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 7px;
-  border: 1px solid #e4e8e0;
-  border-radius: 6px;
-  color: #30382c;
-  background: #fff;
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-.move-list li span {
-  color: #778071;
-  font-size: 0.67rem;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Playback: the premove being played lights up in the world's colour, played ones get a
-   tick, the rest wait; at the result the mating move turns gold, an illegal one red. */
-.move-list li {
-  position: relative;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease;
-}
-
-.move-list li.is-played {
-  border-color: #dfe6da;
-  color: #5d6a57;
-  background: #f1f5ee;
-}
-
-.move-list li.is-played span::before {
-  color: var(--accent, var(--green));
-  font-weight: 900;
-  content: "✓ ";
-}
-
-.move-list li.is-current {
-  z-index: 1;
-  border-color: var(--accent-deep, #3b5530);
-  color: #fff;
-  background: var(--accent, var(--green));
-  box-shadow: 0 2px 0 var(--accent-deep, #3b5530), 0 0 0 3px color-mix(in srgb, var(--accent, #587848) 28%, transparent);
-  transform: translateY(-1px);
-}
-
-.move-list li.is-current span {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.control-panel:has(.run-status) .move-list li.is-current {
-  animation: current-move-pop 380ms cubic-bezier(0.25, 1.6, 0.5, 1);
-}
-
-@keyframes current-move-pop {
-  from { transform: translateY(-1px) scale(0.9); }
-  60% { transform: translateY(-1px) scale(1.04); }
-}
-
-.move-list li.is-current.is-winning {
-  border-color: #a87a0a;
-  color: #5b4104;
-  background: linear-gradient(180deg, #ffe68f, #f2c23c);
-  box-shadow: 0 2px 0 #a87a0a, 0 0 0 3px rgba(242, 194, 60, 0.3);
-}
-
-.move-list li.is-current.is-winning span {
-  color: #7a5806;
-}
-
-.move-list li.is-current.is-winning strong::after {
-  content: "#";
-}
-
-.move-list li.is-upcoming {
-  opacity: 0.62;
-}
-
-.move-list li.is-failed {
-  border-color: #e3a49f;
-  color: #a13a34;
-  background: #fbe9e7;
-}
-
-.move-list li.is-failed strong {
-  text-decoration: line-through;
-  text-decoration-thickness: 2px;
-}
-
-.move-list li.is-failed span::before {
-  font-weight: 900;
-  content: "✕ ";
-}
-
-.move-list li.is-unused {
-  opacity: 0.45;
-}
-
-.move-list li.is-unused strong {
-  font-weight: 500;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -872,18 +670,6 @@ p {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.planning-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.submit-short-label,
-.undo-label {
-  display: none;
 }
 
 .primary-button,
@@ -943,6 +729,7 @@ p {
   background: transparent;
 }
 
+
 @media (hover: hover) {
   .primary-button:hover:not(:disabled) {
     background: #46663a;
@@ -956,30 +743,6 @@ p {
   .text-button:hover {
     color: #273323;
   }
-}
-
-.panel-footnote {
-  margin: 15px 0 0;
-  color: #788172;
-  font-size: 0.68rem;
-  line-height: 1.5;
-}
-
-.inline-error {
-  margin: 4px 0;
-  color: #a93630;
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.run-status {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 4px 0;
-  color: #48613c;
-  font-size: 0.82rem;
-  font-weight: 700;
 }
 
 .spinner {
@@ -1007,6 +770,75 @@ p {
   margin: 0 0 2px;
   font-size: 1.05rem;
   letter-spacing: -0.035em;
+}
+
+/* the result's heading, with "View on chess.com" at its end after a win */
+.outcome-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 8px;
+  container: outcome-heading / inline-size;
+}
+
+/* a small pill beside the heading, so the card (and so the board) keeps its size;
+   the ::after stretches the tap target to 34px */
+.chesscom-link {
+  position: relative;
+  min-height: 24px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-block: -2px;
+  padding: 0 9px;
+  border: 1px solid rgba(52, 67, 45, 0.16);
+  border-radius: 999px;
+  color: #4f5b49;
+  background: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-user-drag: none;
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.chesscom-link::after {
+  content: "";
+  position: absolute;
+  inset: -5px -4px;
+}
+
+.chesscom-link:active {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.chesscom-link:focus-visible {
+  outline: 3px solid #6f9558;
+  outline-offset: 2px;
+}
+
+.chesscom-link .external-icon {
+  font-size: 0.85em;
+}
+
+/* narrow cards: just "chess.com ↗" so it stays on the heading's line */
+@container outcome-heading (max-width: 260px) {
+  .chesscom-link-verb {
+    display: none;
+  }
+}
+
+@media (hover: hover) {
+  .chesscom-link:hover {
+    border-color: rgba(52, 67, 45, 0.32);
+    color: #273323;
+    background: #fff;
+  }
 }
 
 .outcome-card > p:not(.eyebrow) {
@@ -1180,25 +1012,6 @@ p {
   }
 }
 
-/* short portrait phones: after a result the card takes the strip's place (the final
-   position is on the board) so the board doesn't have to shrink for it */
-@container puzzle (max-height: 640px) {
-  .outcome-card ~ .move-list-wrap {
-    display: none;
-  }
-}
-
-.outcome-card + .move-list-wrap,
-.run-status + .move-list-wrap {
-  margin-top: 6px;
-}
-
-/* the played line after a result: a little smaller, it's history now */
-.outcome-card ~ .move-list-wrap .move-list li {
-  gap: 4px;
-  padding: 4px 6px;
-}
-
 /* ---------- Wide layout: board on the left, controls beside it ----------
    Chosen when the board ends up bigger beside the controls than above them, which is
    roughly when the screen is wider than it is tall by ~80px. */
@@ -1276,88 +1089,6 @@ p {
     content: none;
   }
 
-  .control-panel {
-    align-self: stretch;
-    padding: clamp(12px, 2.4cqh, 20px);
-    overflow: hidden;
-  }
-
-  .panel-top {
-    align-items: flex-start;
-    margin-bottom: 0;
-  }
-
-  .panel-top,
-  .control-panel:has(.outcome-card) .panel-top,
-  .control-panel:has(.run-status) .panel-top {
-    display: flex;
-  }
-
-  .panel-top .eyebrow,
-  .panel-copy,
-  .panel-footnote {
-    display: block;
-  }
-
-  .panel-top h2 {
-    font-size: 1.2rem;
-  }
-
-  .move-count {
-    margin-top: 4px;
-  }
-
-  /* the move list grows into the panel's free space and scrolls if the line is long */
-  .move-list-wrap {
-    height: auto;
-    flex: 1 1 auto;
-    min-height: 52px;
-    display: block;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: 11px;
-    scrollbar-width: thin;
-    touch-action: pan-y;
-  }
-
-  .move-list {
-    display: grid;
-    gap: 6px;
-  }
-
-  .move-list li {
-    gap: 11px;
-    padding: 8px 9px;
-  }
-
-  .outcome-card ~ .move-list-wrap {
-    display: block;
-  }
-
-  .outcome-card ~ .move-list-wrap .move-list {
-    display: flex;
-    flex-wrap: wrap;
-  }
-
-  .planning-actions {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    margin-top: 15px;
-  }
-
-  .undo-label {
-    display: inline;
-  }
-
-  .undo-short-label {
-    display: none;
-  }
-
-  .inline-error,
-  .run-status {
-    margin: 12px 0 0;
-  }
-
   .outcome-card,
   .outcome-card:not(.is-error) {
     display: block;
@@ -1395,11 +1126,6 @@ p {
 
   .outcome-actions > .text-button {
     flex-basis: 100%;
-  }
-
-  .outcome-card + .move-list-wrap,
-  .run-status + .move-list-wrap {
-    margin-top: 15px;
   }
 
   /* the board drops its labels when this short (see the board query above) */
@@ -1462,67 +1188,6 @@ p {
       content: " · ";
     }
 
-    .control-panel {
-      padding: 8px;
-    }
-
-    .panel-top {
-      align-items: center;
-      margin-bottom: 6px;
-    }
-
-    .panel-top .eyebrow,
-    .panel-copy,
-    .panel-footnote,
-    .outcome-card .eyebrow,
-    .control-panel:has(.outcome-card) .panel-top,
-    .control-panel:has(.run-status) .panel-top {
-      display: none;
-    }
-
-    .panel-top h2 {
-      font-size: 0.9rem;
-    }
-
-    .move-count {
-      margin: 0;
-    }
-
-    .move-list-wrap {
-      min-height: 40px;
-      padding: 5px;
-    }
-
-    .move-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-
-    .move-list li {
-      gap: 5px;
-      padding: 4px 7px;
-    }
-
-    .planning-actions {
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
-      margin-top: 6px;
-    }
-
-    .undo-label {
-      display: none;
-    }
-
-    .undo-short-label {
-      display: inline;
-    }
-
-    .inline-error,
-    .run-status {
-      margin: 4px 0;
-    }
-
     .outcome-card,
     .outcome-card:not(.is-error) {
       margin: 0;
@@ -1558,11 +1223,6 @@ p {
       min-height: 40px;
       padding: 4px 8px;
     }
-
-    .outcome-card + .move-list-wrap,
-    .run-status + .move-list-wrap {
-      margin-top: 6px;
-    }
   }
 }
 
@@ -1578,29 +1238,10 @@ p {
   }
 }
 
-/* tall phones have height to spare under the board: use it for the instructions */
-@container puzzle (max-aspect-ratio: 11/20) {
-  .control-panel:not(:has(.outcome-card, .run-status)) .panel-copy {
-    display: block;
-    min-height: 0;
-    margin: 0 0 8px;
-    font-size: 0.76rem;
-    line-height: 1.45;
-  }
-}
-
 /* the narrowest screens (folded phones) */
 @container puzzle (max-width: 330px) {
   .puzzle-heading {
     column-gap: 7px;
-  }
-
-  .submit-label {
-    display: none;
-  }
-
-  .submit-short-label {
-    display: inline;
   }
 
   .outcome-actions button {

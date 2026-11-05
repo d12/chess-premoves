@@ -1,17 +1,21 @@
-// The game's structure: worlds ("stages"), each with an ordered run of levels. Each level
-// points at a puzzle in puzzles.json, so the same puzzle can appear in more than one level.
-// Edit the layout in stages.json. Level ids are "<stage>-<level>" ("2-3" is the third level
-// of the second stage); progress is keyed by these ids and levels unlock in reading order.
+// The game's structure: worlds ("stages"), each with an ordered run of levels. stages.json
+// holds each world's display data (name, theme, mascot); its levels are the entries of
+// puzzles.json whose ids start with the world's id ("2-1", "2-2", …), in level order. Level
+// ids are "<stage>-<level>" ("2-3" is the third level of the second stage); progress is
+// keyed by these ids and levels unlock in reading order.
 import STAGE_DATA from "./stages.json" with { type: "json" };
-import { getPuzzle } from "./puzzles.js";
+import { parseLevelId, PUZZLES } from "./puzzles.js";
 
 export const STAGES = Object.freeze(STAGE_DATA.map((stage) => {
-  const levels = stage.puzzles.map((puzzleId, index) => Object.freeze({
-    id: `${stage.id}-${index + 1}`,
-    stageId: stage.id,
-    number: index + 1,
-    puzzle: getPuzzle(puzzleId), // throws on an unknown puzzle id
-  }));
+  const levels = PUZZLES
+    .filter((puzzle) => String(parseLevelId(puzzle.id)?.world) === stage.id)
+    .sort((a, b) => parseLevelId(a.id).level - parseLevelId(b.id).level)
+    .map((puzzle) => Object.freeze({
+      id: puzzle.id,
+      stageId: stage.id,
+      number: parseLevelId(puzzle.id).level,
+      puzzle,
+    }));
   return Object.freeze({
     id: stage.id,
     name: stage.name,
