@@ -1,0 +1,1040 @@
+/* The stats screen ("Your record") and its way in, the star counter in the top bar.
+   The screen is a size container ("stats"): three columns when everything fits, otherwise
+   tabs (Overview / Worlds / Badges), so it never scrolls as a page. The rank card takes
+   its colours from the player's current world ([data-theme], see worlds.css). */
+
+/* ---------- The star counter: a button into the stats screen ---------- */
+
+button.star-counter {
+  position: relative;
+  min-height: 36px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px 4px 8px;
+  cursor: pointer;
+  transition: background 130ms ease, transform 110ms ease;
+}
+
+@media (pointer: coarse) {
+  button.star-counter {
+    min-height: 40px;
+  }
+}
+
+@media (hover: hover) {
+  button.star-counter:hover:not(:disabled) {
+    background: #fff;
+  }
+
+  button.star-counter.has-stars:hover:not(:disabled) {
+    background: #fff6d9;
+  }
+}
+
+button.star-counter:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button.star-counter:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.star-counter.is-current {
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+.star-counter-trophy {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  align-self: center;
+}
+
+.star-counter-trophy svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* badges earned but not yet seen */
+button.star-counter.has-new::after {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--page);
+  border-radius: 50%;
+  background: #e0452f;
+  content: "";
+}
+
+/* the narrowest phones: the brand shrinks to its mark to make room */
+@media (max-width: 340px) {
+  .brand {
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .brand > span:not(.brand-mark) {
+    display: none;
+  }
+}
+
+/* ---------- Screen frame ---------- */
+
+.stats-screen {
+  --stats-gap: clamp(10px, 2vw, 22px);
+  width: min(1240px, calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 2vh, 18px);
+  padding: clamp(8px, 2vh, 20px) 0 clamp(10px, 2.6vh, 26px);
+  container: stats / size;
+}
+
+.stats-heading {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px clamp(10px, 2vw, 18px);
+}
+
+.stats-heading h1 {
+  margin: 0;
+  color: #23301e;
+  font-family: "Lilita One", Inter, sans-serif;
+  font-size: clamp(1.45rem, min(5.5cqw, 7cqh), 2.6rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.stats-heading .round-back {
+  border-color: var(--surface-border);
+  color: #45523e;
+}
+
+/* tabs: a chunky segmented control, like a game menu */
+.stats-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px;
+  border-radius: 14px;
+  background: #e4eadf;
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.stats-tab {
+  position: relative;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  color: #5b6656;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stats-tab.is-active {
+  color: #23301e;
+  background: #fff;
+  box-shadow: 0 2px 0 #c9d3c1;
+}
+
+.tab-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e0452f;
+}
+
+.stats-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--stats-gap);
+}
+
+/* tabs mode: one panel at a time */
+.stats-panel {
+  position: relative; /* keeps visually hidden labels inside the panel's scroll area */
+  container: panel / inline-size;
+  min-width: 0;
+  min-height: 0;
+  display: none;
+  flex-direction: column;
+  gap: clamp(8px, 1.6cqh, 14px);
+}
+
+.stats-panel.is-active {
+  display: flex;
+}
+
+.stats-panel-title {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  color: #23301e;
+  font-family: "Lilita One", Inter, sans-serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+}
+
+.stats-panel-title span {
+  color: var(--text-muted);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* narrow: tabs get their own row */
+@container stats (max-width: 560px) {
+  .stats-tabs {
+    flex: 1 1 100%;
+    margin: 0;
+  }
+
+  .stats-tab {
+    flex: 1;
+    padding: 0 8px;
+  }
+}
+
+/* wide: all three panels side by side, no tabs */
+@container stats (min-width: 960px) and (min-height: 520px) {
+  .stats-tabs {
+    display: none;
+  }
+
+  .stats-body {
+    grid-template-columns: minmax(270px, 0.85fr) minmax(0, 1.15fr) minmax(0, 1.1fr);
+  }
+
+  .stats-panel {
+    display: flex;
+  }
+
+  .stats-badges .badge-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* the three columns share a heading row */
+  .stats-body .stats-overview {
+    justify-content: flex-start;
+  }
+
+  .stats-overview .stats-rank-title {
+    display: flex;
+  }
+
+  /* cqw here is the column's width (each panel is an inline-size container) */
+  .stats-overview .rank-card {
+    --crest: clamp(108px, min(62cqw, 23cqh), 210px);
+  }
+}
+
+/* a narrow badges column (three-column layout on smaller windows): names only */
+@container panel (max-width: 380px) {
+  .stats-badges .badge-how {
+    display: none;
+  }
+}
+
+/* ---------- Overview: the rank card and the counters ---------- */
+
+.stats-overview {
+  justify-content: safe center;
+}
+
+/* in tabs mode the tab names the panel */
+.stats-rank-title {
+  display: none;
+}
+
+.rank-card {
+  --crest: clamp(108px, min(42cqw, 30cqh), 210px);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(12px, 2.6cqh, 24px) clamp(12px, 2.4cqw, 22px) clamp(12px, 2.4cqh, 20px);
+  border: 3px solid var(--accent-deep);
+  border-radius: 24px;
+  background:
+    radial-gradient(ellipse 120% 70% at 50% 0%, color-mix(in srgb, var(--sky-bottom) 70%, #fff) 0%, #fff 72%);
+  box-shadow: 0 6px 0 var(--accent-deep), 0 16px 28px rgba(30, 40, 25, 0.14);
+  text-align: center;
+}
+
+.rank-crest {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+/* the medallion: the current world's landscape with the rank's piece standing in it */
+.crest-medal {
+  position: relative;
+  width: var(--crest);
+  height: var(--crest);
+  display: block;
+  overflow: hidden;
+  border: calc(var(--crest) * 0.035 + 3px) solid #fff;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+  box-shadow:
+    0 0 0 calc(var(--crest) * 0.025 + 2px) var(--accent-deep),
+    0 calc(var(--crest) * 0.05) 0 calc(var(--crest) * 0.025 + 2px) color-mix(in srgb, var(--accent-deep) 75%, #000),
+    0 18px 30px rgba(0, 0, 0, 0.22);
+}
+
+.crest-scene .scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.crest-piece {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  height: 62%;
+  translate: -50% 0;
+  filter: drop-shadow(0 calc(var(--crest) * 0.03) 0 rgba(0, 0, 0, 0.25));
+}
+
+.crest-glyph {
+  color: #fff;
+  font-size: calc(var(--crest) * 0.5);
+  line-height: 1;
+}
+
+/* Grandmaster: a gold medal */
+.rank-crest.is-gold .crest-medal {
+  border-color: #fff3c4;
+  box-shadow:
+    0 0 0 calc(var(--crest) * 0.025 + 2px) #d9a21b,
+    0 calc(var(--crest) * 0.05) 0 calc(var(--crest) * 0.025 + 2px) #a87a0a,
+    0 0 40px rgba(242, 194, 60, 0.55);
+}
+
+/* the rank's name on a ribbon across the bottom of the medal */
+.rank-ribbon {
+  position: relative;
+  z-index: 1;
+  margin: calc(var(--crest) * -0.16) 0 0;
+  padding: 0.16em 1.15em 0.24em;
+  color: #fff;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 94% 50%, 100% 100%, 0 100%, 6% 50%);
+  filter: drop-shadow(0 4px 0 var(--accent-deep));
+  font-family: var(--font-game);
+  font-size: clamp(1.35rem, calc(var(--crest) * 0.17), 2.2rem);
+  font-weight: 400;
+  line-height: 1.1;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
+  white-space: nowrap;
+}
+
+.rank-crest.is-gold .rank-ribbon {
+  color: #5b4104;
+  background: linear-gradient(180deg, #ffe68f, #f2c23c);
+  filter: drop-shadow(0 4px 0 #a87a0a);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* progress to the next rank, with that rank's piece waiting as a silhouette */
+.rank-progress {
+  width: min(100%, 320px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: clamp(10px, 2cqh, 18px);
+}
+
+.rank-track {
+  flex: 1;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 80%, #d8ded4);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.rank-fill {
+  width: calc(var(--fill) * 100%);
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent));
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12);
+  transform-origin: left center;
+}
+
+.rank-crest.is-gold ~ .rank-progress .rank-fill {
+  background: linear-gradient(180deg, #ffe68f, #e0a520);
+}
+
+.rank-next {
+  height: 34px;
+  flex: none;
+  filter: brightness(0);
+  opacity: 0.45;
+}
+
+.rank-hint {
+  max-width: 34ch;
+  margin: 8px 0 0;
+  color: var(--accent-ink);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+/* the counters: one scoreboard, a row per number */
+.stat-counters {
+  flex: none;
+  display: grid;
+  margin: 0;
+  padding: 4px 14px;
+  border: 2px solid var(--surface-border);
+  border-radius: 18px;
+  background: #fff;
+  list-style: none;
+}
+
+.stat-counter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: clamp(36px, 7cqh, 50px);
+}
+
+.stat-counter + .stat-counter {
+  border-top: 1px solid #e6ebe2;
+}
+
+.stat-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--green);
+  background: var(--green-pale);
+}
+
+.stat-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.stat-counter.is-stars .stat-icon {
+  color: #a87a0a;
+  background: var(--gold-pale);
+}
+
+.stat-counter.is-attempts .stat-icon {
+  color: #4677c0;
+  background: #e0ebf9;
+}
+
+.stat-counter.is-first .stat-icon {
+  color: #2d8a75;
+  background: #d9eee8;
+}
+
+.stat-counter.is-rate .stat-icon {
+  color: #d47b25;
+  background: #fcebd3;
+}
+
+.stat-label {
+  color: #485343;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.stat-value {
+  color: #23301e;
+  font-family: "Lilita One", Inter, sans-serif;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stat-value small {
+  color: var(--text-muted);
+  font-size: 0.68em;
+}
+
+/* landscape phones and short windows in tabs mode: rank on the left, counters on the right */
+@container stats (min-aspect-ratio: 7/5) and ((max-width: 959px) or (max-height: 519px)) {
+  .stats-overview.is-active {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-content: center;
+    align-items: center;
+    gap: var(--stats-gap);
+  }
+
+  .rank-card {
+    --crest: clamp(92px, min(24cqw, 34cqh), 190px);
+  }
+}
+
+/* short portrait phones: a smaller medal and the counters two to a row */
+@container stats (max-height: 700px) and (max-aspect-ratio: 1/1) {
+  .rank-card {
+    --crest: clamp(92px, min(38cqw, 24cqh), 180px);
+  }
+
+  .stat-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 12px;
+    padding: 6px 12px;
+  }
+
+  .stat-counter {
+    grid-template-areas:
+      "icon value"
+      "icon label";
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1px 8px;
+    min-height: 0;
+    padding: 6px 0;
+  }
+
+  .stat-counter + .stat-counter {
+    border-top: 0;
+  }
+
+  .stat-counter:nth-child(n + 3) {
+    border-top: 1px solid #e6ebe2;
+  }
+
+  .stat-icon {
+    grid-area: icon;
+  }
+
+  .stat-label {
+    grid-area: label;
+    overflow: hidden;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stat-value {
+    grid-area: value;
+    font-size: 1.15rem;
+  }
+
+  .stat-counter.is-rate {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Worlds ---------- */
+
+.world-records {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.2cqh, 10px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-record {
+  flex: 1 1 0;
+  max-height: 104px;
+  min-height: 0;
+  display: grid;
+  grid-template-areas: "mascot title levels";
+  grid-template-columns: auto minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px 8px 8px;
+  border: 2px solid var(--accent-soft);
+  border-left: 6px solid var(--accent);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.world-record.is-locked {
+  border-color: #e3e7e1;
+  border-left-color: #b6bdb3;
+  background: #f4f6f2;
+}
+
+.record-mascot {
+  grid-area: mascot;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.15);
+}
+
+.record-mascot img {
+  width: auto;
+  height: 34px;
+  display: block;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.2));
+}
+
+.world-record.is-locked .record-mascot {
+  background: #9aa29d;
+}
+
+.world-record.is-locked .record-mascot img {
+  filter: brightness(0);
+  opacity: 0.45;
+}
+
+.record-title {
+  grid-area: title;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.record-name {
+  overflow: hidden;
+  color: var(--accent-ink);
+  font-family: var(--font-game);
+  font-size: 1.08rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-record.is-locked .record-name {
+  color: #7a8276;
+}
+
+.record-score {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.record-levels {
+  grid-area: levels;
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record-level {
+  width: 38px;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+
+/* little level nodes, drawn like the ones on the level map */
+.record-node {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 3px 0 var(--accent-deep);
+  font-family: var(--font-game);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.record-node svg {
+  width: 56%;
+  height: 56%;
+}
+
+.record-node.is-complete {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: #fff;
+}
+
+.record-node.is-perfect {
+  border-color: #fff6d5;
+  color: #7a5806;
+  background: linear-gradient(180deg, #ffe68f, #f2c23c);
+  box-shadow: 0 3px 0 #a87a0a;
+}
+
+.record-node.is-locked {
+  border-color: #dde2db;
+  color: #f2f4f1;
+  background: #a8b0ab;
+  box-shadow: 0 3px 0 #868f8a;
+  --lock-hole: #a8b0ab;
+}
+
+.record-tries {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.record-tries.is-first-try {
+  color: #2d8a75;
+}
+
+/* narrow panels: the level row goes under the world's name */
+@container stats (max-width: 470px) {
+  .world-record {
+    grid-template-areas:
+      "mascot title"
+      "mascot levels";
+    grid-template-columns: auto minmax(0, 1fr);
+    max-height: none;
+  }
+
+  .record-levels {
+    justify-content: space-between;
+  }
+}
+
+/* short phones: the nodes already show each world's score */
+@container stats (max-width: 470px) and (max-height: 700px) {
+  .world-record:not(.is-locked) .record-score {
+    display: none;
+  }
+
+  .world-record.is-locked .record-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+}
+
+@container stats (min-width: 960px) and (min-height: 520px) and (max-width: 1180px) {
+  .world-record {
+    grid-template-areas:
+      "mascot title"
+      "mascot levels";
+    grid-template-columns: auto minmax(0, 1fr);
+    max-height: none;
+  }
+}
+
+/* short screens: slimmer world rows */
+@container stats (max-height: 700px) {
+  .world-record {
+    padding: 5px 10px 5px 6px;
+  }
+
+  .record-mascot {
+    width: 40px;
+    height: 40px;
+  }
+
+  .record-mascot img {
+    height: 29px;
+  }
+
+  .record-node {
+    width: 27px;
+    height: 27px;
+    font-size: 0.8rem;
+  }
+
+  .record-level {
+    gap: 1px;
+  }
+}
+
+/* very short (phones on their side): the attempt labels make way */
+@container stats (max-height: 440px) {
+  .record-tries {
+    display: none;
+  }
+
+  .world-records {
+    gap: 5px;
+  }
+
+  .world-record {
+    padding-block: 3px;
+  }
+
+  .record-mascot {
+    width: 34px;
+    height: 34px;
+  }
+
+  .record-mascot img {
+    height: 25px;
+  }
+
+  .record-node {
+    width: 26px;
+    height: 26px;
+    border-width: 2px;
+  }
+}
+
+/* ---------- Badges ---------- */
+
+.badge-grid {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 168px), 1fr));
+  grid-auto-rows: minmax(min-content, 1fr);
+  align-content: stretch;
+  gap: clamp(6px, 1.2cqh, 10px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 2px solid #e6ebe2;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.badge.is-locked {
+  background: #f6f8f4;
+}
+
+.badge-medal {
+  --badge-face: #f2c23c;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #fff6d5;
+  border-radius: 50%;
+  color: #6f5005;
+  background: radial-gradient(circle at 35% 30%, #fff2b8, #f2c23c 62%);
+  box-shadow: 0 4px 0 #a87a0a, 0 6px 12px rgba(168, 122, 10, 0.25);
+  font-family: var(--font-game);
+}
+
+.badge-medal svg {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+
+.badge.is-locked .badge-medal {
+  --badge-face: #e3e7e1;
+  border-color: #f4f6f2;
+  color: #a7afa2;
+  background: #e3e7e1;
+  box-shadow: 0 4px 0 #c6cdc1;
+}
+
+.badge-text {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.badge-name {
+  color: #23301e;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.badge.is-locked .badge-name {
+  color: #6c7668;
+}
+
+.badge-how {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.badge-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.badge-progress > span {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e1e6dd;
+}
+
+.badge-progress > span::before {
+  width: calc(var(--fill) * 100%);
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: #9bb38b;
+  content: "";
+}
+
+.badge-progress em {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.badge-new {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px 2px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e0452f;
+  font-size: 0.62rem;
+  font-weight: 800;
+  vertical-align: 1px;
+}
+
+.badge.is-new .badge-medal {
+  animation: badge-shine 1.6s 0.4s ease-out both;
+}
+
+@keyframes badge-shine {
+  0% { transform: scale(0.6) rotate(-20deg); }
+  35% { transform: scale(1.15) rotate(6deg); box-shadow: 0 4px 0 #a87a0a, 0 0 0 10px rgba(242, 194, 60, 0.35); }
+  60% { transform: scale(1) rotate(0); }
+}
+
+/* portrait phones short on height: the one-line descriptions make way */
+@container stats (max-height: 640px) and (max-aspect-ratio: 1/1) {
+  .badge-how {
+    display: none;
+  }
+}
+
+/* small phones: badges two to a row, medal and name only */
+@container stats (max-width: 360px) {
+  .badge-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .badge {
+    gap: 7px;
+    padding: 6px 7px;
+  }
+
+  .badge-medal {
+    width: 34px;
+    height: 34px;
+    border-width: 2px;
+  }
+
+  .badge-medal svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .badge-name {
+    font-size: 0.76rem;
+  }
+
+  .badge-how {
+    display: none;
+  }
+
+  .record-level {
+    width: auto;
+    flex: 1;
+  }
+}
+
+/* landscape phones: more, shorter badges per row */
+@container stats (min-aspect-ratio: 7/5) and ((max-width: 959px) or (max-height: 519px)) {
+  .badge-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+
+  .badge-how {
+    display: none;
+  }
+}
+
+/* short screens: tighter badges */
+@container stats (max-height: 560px) {
+  .badge {
+    padding: 5px 8px;
+  }
+
+  .badge-medal {
+    width: 36px;
+    height: 36px;
+  }
+
+  .badge-medal svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* ---------- Opening the screen: one orchestrated moment ---------- */
+
+.stats-screen.is-intro .crest-medal {
+  animation: crest-pop 620ms cubic-bezier(0.25, 1.5, 0.5, 1) both;
+}
+
+.stats-screen.is-intro .rank-ribbon {
+  animation: stamp-in 520ms 300ms cubic-bezier(0.25, 1.5, 0.5, 1) backwards;
+}
+
+.stats-screen.is-intro .rank-fill {
+  animation: rank-fill-grow 900ms 520ms cubic-bezier(0.3, 0.8, 0.3, 1) backwards;
+}
+
+.stats-screen.is-intro .crest-piece {
+  animation: crest-piece-rise 700ms 160ms cubic-bezier(0.25, 1.4, 0.5, 1) backwards;
+}
+
+@keyframes crest-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes crest-piece-rise {
+  from { transform: translateY(40%); opacity: 0; }
+}
+
+@keyframes rank-fill-grow {
+  from { transform: scaleX(0); }
+}

@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the playback-move-highlight PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, and 77 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the stats-screen PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, a stats screen, and 86 passing tests.
 
 ---
 
@@ -46,10 +46,12 @@ src/
   ui/
     worlds.css            world map, level maps (incl. their responsive layouts) and per-world themes ([data-theme] tokens, keyframes)
     scenery.js            flat SVG landscapes per theme (renderScene) + per-theme confetti colours
+    stats.css             the stats screen and the top bar's stats button
   game/
     session.js            UI-independent game engine: planning, premove queue, playback (createPremoveGame)
     premoveRules.js       chess.com-style *geometric* premove rules and the planning preview board
-    progress.js           localStorage progress: completed, perfected, attempts (createProgressStore)
+    progress.js           localStorage progress: completed, perfected, attempts, wins, first wins (createProgressStore)
+    stats.js              what the stats screen shows: rank ladder, counters, worlds, badges (computeStats); seen-badge memory
     puzzles.json          the levels (written by `ppz app`)
     puzzles.js            frozen PUZZLES list + getPuzzle(id)
     stages.json           the world/level layout: which puzzle each level uses (hand-edited)
@@ -142,11 +144,13 @@ There is **no Stockfish in the game**. It was removed because it plays good ches
 ### 4.5 Persistent state (`progress.js`)
 
 - localStorage key: `chess-premove-progress-v1`.
-- Value: `{ completedIds: string[], perfectedIds: string[], attempts: { [id]: int } }`, where the ids are **level ids** (`"2-3"` = world 2, level 3), not puzzle ids, because one puzzle can appear in several levels.
+- Value: `{ completedIds: string[], perfectedIds: string[], attempts: { [id]: int }, wins: { [id]: int }, firstWins: { [id]: int } }`, where the ids are **level ids** (`"2-3"` = world 2, level 3), not puzzle ids, because one puzzle can appear in several levels.
 - Saves from before stages hold puzzle numbers (`"1"`…). They still load and those entries are kept on save, but they match no level, so they count for nothing (old progress does not carry over; a tested decision, see `test/progress.test.js`).
-- Older saves without `perfectedIds` or `attempts` must keep loading, and they do; preserve this.
+- Older saves without `perfectedIds`, `attempts`, `wins` or `firstWins` must keep loading, and they do; preserve this.
+- `wins` counts every win of a level; `firstWins` stores **which attempt first solved it** (`attemptCount` at that moment, at least 1). Both start empty for wins made before they existed: those levels report `winCount` 0 and `firstWinAttempt` null, and a later win doesn't invent a first-win attempt for them.
 - Corrupt data **throws**; it is never silently discarded. All writes go through one `save()` helper.
-- API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})`, `attemptCount`, `recordAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
+- API: `isCompleted`, `isPerfected`, `isUnlocked`, `isStageUnlocked`, `isStageCleared`, `markCompleted(id, {perfect})` (now called on every win, not only the first), `attemptCount`, `recordAttempt`, `winCount`, `firstWinAttempt`, `completedIds`, `perfectedIds`, `unlockForDevelopment`.
+- Separately, `chess-premove-badges-seen-v1` (in `stats.js`) lists the earned badges the player has already seen on the stats screen. It's cosmetic: unreadable data just means badges show as new once more.
 - Levels unlock in play order (1-1 … 1-5, 2-1 …): a level needs every earlier level completed, so a world opens only once the whole previous world is cleared.
 - Progress is keyed by **level slot**, so pointing a level at a different puzzle in `stages.json` keeps that slot's completion for returning players.
 - **Dev mode** (`import.meta.env.DEV`, i.e. `npm run dev`): clicking a locked level unlocks it for the current page session only; locked worlds can be opened too.
@@ -179,11 +183,18 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
 ### 4.7 UI architecture (`main.js`)
 
 - **One global `state` object and full re-render.** `render()` replaces `app.innerHTML` from `state` on almost every change. Never hold DOM references across renders. Effects that must run once use **one-shot flags consumed by `render()`**: `pendingPieceMove` (slide animation), `pendingCelebration`, `revealOutcome`.
-- Screens: `loading`, `index` (the **world map**), `stage` (a world's **level map**), `puzzle`, `error`.
+- Screens: `loading`, `index` (the **world map**), `stage` (a world's **level map**), `puzzle`, `stats` (**Your record**), `error`.
   - **World map:** one illustrated card per world (themed SVG scene, the world's piece as landmark, 5 progress pips, status). Locked worlds are dimmed with the piece as a black silhouette and a padlock; cleared worlds get a "Cleared" / "★ Perfect" corner ribbon. A dotted road links the cards. The hero has a levels-cleared bar and a **Continue · Level S-L** button that jumps straight into the next unbeaten level.
   - **Level map:** the world's panorama with a winding trail through 5 round level nodes (locked padlock / ready with pulse ring / white ✓ completed / gold ★ perfected). The world's piece stands on the next level to play and bobs; a goal flag by level 5 is raised (gold) once the world is cleared, with a "World clear!" / "★ Perfect!" stamp. Footer: "Next up" + Play button, or "On to World N". Escape goes back to the world map. Nodes have a tall layout under 640px.
   - Neither map shows move counts (owner's rule). The puzzle page heading shows a themed `S-L` badge, "World S, level L of 5" and pips, then chips: "Perfect in N premoves", "N attempts" and "★ Perfected" (in the compact heading the kicker text and pips are hidden and the chips become one line of small text). The back button returns to the world's level map. The board's labels follow chess.com: "Opponent · Black" above the board, "You · White" below it.
   - The top bar shows the engine pill only while the engine loads ("LOADING ENGINE") or failed ("ENGINE OFFLINE"); once it's ready it disappears.
+- **Stats screen ("Your record")**, opened from the top bar's star counter (a button with a trophy; a red dot means badges earned but not yet seen). Disabled while a line plays. Back (the ← button, Escape, or the system Back) returns to where it was opened: a world's level map if opened from one or from a level, otherwise the world map. Everything comes from `computeStats(progress, STAGES)` in `game/stats.js`:
+  - **Rank:** a ladder of the worlds' mascots, Pawn → Knight → Bishop → Rook → Queen (one step per world cleared), then King (every world cleared) and Grandmaster (every level perfect, gold). Shown as a medallion with the current world's scenery and the rank's piece, a ribbon, a bar toward the next rank (that rank's piece as a silhouette) and a hint ("Clear 3 more levels in Knight's Wood to become a Bishop.").
+  - **Counters:** levels cleared, stars, attempts, first-try clears, solve rate (wins ÷ attempts; "—" before the first attempt).
+  - **Worlds:** each world's five levels as mini nodes (locked / ready / ✓ / ★) with their attempt counts ("1st try", "3 tries").
+  - **Badges** (10): First checkmate, Flawless, Sharp eye, Hat trick, Never give up, World conqueror, Spotless, Star collector, Completionist, Grandmaster, with progress bars toward multi-step ones. Badges first seen on this visit get a "New" chip and a shine.
+  - No move counts appear (owner's rule).
+  - **Layout:** `.stats-screen` is a size container. Three columns (Rank, Worlds, Badges) when it's ≥ 960 × 520; otherwise tabs (Overview / Worlds / Badges, with arrow-key support), with Overview split side by side on landscape phones. It fits without scrolling at every tested size. Opening it plays one intro: the medal pops, the ribbon stamps, the bar fills and the counters count up.
 - **System Back button** (`syncHistory`, `goBack`, `popstate` in `main.js`): while inside a world the app keeps exactly one history entry of its own, so Android back / browser Back / iOS swipe go level → level map → world map instead of leaving the game; on the world map there's no entry and Back leaves the page. Coming back up with the in-app buttons pops that entry (`ignoreNextPop`). Back while a line is playing is ignored (the entry is re-pushed); Back with the promotion picker open cancels it. There are still no URLs per screen.
 - **Layout: a full-viewport app, not a page** (see §4.7b).
 - **Navigation** goes through `navigate(update)`, which wraps the screen change in a View Transition (a world card grows into its level map via `view-transition-name: world-scene-N`). Skipped without browser support or with reduced motion. The transition overlay takes input for ~420 ms.
@@ -307,11 +318,12 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 77 tests in 11 files, about 25 s.
+- `npm test`: 86 tests in 12 files, about 25 s.
   - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
-  - `progress`: storage, migration, attempts, stage gating, pre-stage saves
+  - `progress`: storage, migration, attempts, wins and first-win attempts, stage gating, pre-stage saves
+  - `stats`: rank ladder and promotions, counters, first-try and hard-won clears, badges, seen-badge memory
   - `stages`: the 5×5 layout in `stages.json`
   - `sound`: SAN → sound mapping, every sound builds a valid self-ending graph, mute persistence, no-audio fallbacks
   - `music`: every world's piece (length, well-formed bars, a breakdown), the five being distinct (melody, tempo, metre, scale; forest minor, 6/8 and sparser than meadow), second-pass variation and rests, scales, scheduling only into layers that are on, the player's gesture/scene/world/hidden/off behaviour
@@ -328,6 +340,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
   - Collect `pageerror` and console errors.
   - Sounds: on the dev server read and clear `window.__soundLog` to assert which sounds fired and their `when`. On a production build, wrap `window.AudioContext` with `evaluateOnNewDocument` to count scheduled nodes. To check the mix, render a sound into an `OfflineAudioContext` with `synthesize()` + `createLimiter()` and measure peak/RMS. Headless Chrome can't be listened to, so ask the owner to audition changes. For music, render bars with `scheduleRange` into an `OfflineAudioContext` (through the same low-pass/high-pass chain), measure levels per scene against the effects, encode MP3s with `ffmpeg` and send them to the owner; on the dev server, `window.__music.state()` gives `{ world, scene, bar, … }`.
   - Take screenshots and look at them.
+  - **Stats screen:** seed progress (including `wins`/`firstWins`), open it with `[data-action="stats"]`, wait ~1.5 s for the intro, and check each tab (`.stats-tab[data-tab=…]`, shown when narrower than 960 or shorter than 520) for zero page scroll **and zero scroll inside `.stats-panel`**, with a fresh player (no saved progress), a mid-game one and a Grandmaster. Note: each `.stats-panel` is an inline-size container, so `cqw` inside a panel means the panel's width.
   - **Layout sweep** (after any CSS change): drive every screen (world map, level map, planning, a queued line with a selection, playing, perfect result, defeat, cleared level map) at phone portrait/landscape (280×653 fold, 360×640, 375×667, 390×844, 430×932, 640×360, 667×375, 844×390, 932×430), tablets (768×1024, 1024×768, 1024×1366, 1366×1024) and desktop windows (800×600, 1280×720, 1366×768, 1440×900, 1920×1080, 2560×1080, 1200×560, 520×1000), with `isMobile`/`hasTouch` for phones and tablets. For each, assert `document.scrollingElement.scrollHeight − innerHeight === 0` (and the same horizontally), that no button/heading/board is outside the viewport unless inside a scroller, that buttons are ≥ 32 px, and that the board's width is identical across planning/playing/result. Also check the promotion picker fits (level 5-1: d4–d5–d6–d7–d8), the system Back flow (`page.goBack()`), and resizing mid-level (portrait ↔ landscape). Seed progress with `addInitScript` + `localStorage`.
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
@@ -366,7 +379,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **`review_queue.jsonl`** at the repo root is a committed `ppz` queue file. Only `puzzle-finder/.gitignore` ignores it, so the copy at the root is probably accidental.
 - **No UI smoke test in CI.** A minimal Puppeteer or Playwright test that loads the built app and solves level 1 would have caught PR #9's bug.
 - Touch devices can't draw arrows or highlights (there's no right click). A long-press-and-drag gesture could stand in for right-drag if it's wanted.
-- Possible next features: showing why a plan failed (`opponent.analysis.line`), and a stats view (attempts, perfects). A volume slider (the player has a single output gain) if on/off isn't enough.
+- Possible next features: showing why a plan failed (`opponent.analysis.line`). Stats ideas not done: a time-played counter, streaks (days played), and celebrating a badge the moment it's earned (today it's flagged on the stats button and celebrated on the stats screen). A volume slider (the player has a single output gain) if on/off isn't enough.
 - Progress is keyed by level slot (§4.5), not by puzzle. Reordering worlds (rather than swapping puzzles inside a slot) would shift completions.
 - The worlds repeat one puzzle each until there are 25 puzzles; `stages.json` is where to place new ones.
 - Map ideas not done: URL routing (the system Back button now steps up through the screens, but screens have no URLs, so a reload returns to the world map). Touch-drag on maps is not needed (everything is click/tap).

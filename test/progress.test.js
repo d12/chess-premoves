@@ -142,3 +142,46 @@ test("progress saved by puzzle number before stages existed still loads but coun
   assert.deepEqual(saved.completedIds, ["1", "2", "1-1"], "old entries are kept, not discarded");
   assert.equal(saved.attempts["1"], 4);
 });
+
+test("every win is counted and the first remembers which attempt it came on", () => {
+  const storage = memoryStorage();
+  const progress = createProgressStore(storage);
+  assert.equal(progress.winCount("1-1"), 0);
+  assert.equal(progress.firstWinAttempt("1-1"), null);
+  progress.recordAttempt("1-1");
+  progress.recordAttempt("1-1");
+  progress.recordAttempt("1-1");
+  progress.markCompleted("1-1");
+  progress.recordAttempt("1-1");
+  progress.markCompleted("1-1", { perfect: true });
+  progress.recordAttempt("1-1");
+  progress.markCompleted("1-1");
+
+  const reloaded = createProgressStore(storage);
+  assert.equal(reloaded.winCount("1-1"), 3);
+  assert.equal(reloaded.firstWinAttempt("1-1"), 3, "solved on the third attempt");
+  assert.equal(reloaded.isPerfected("1-1"), true, "a later non-perfect win keeps the perfect");
+  assert.equal(reloaded.attemptCount("1-1"), 5);
+  // a win recorded without a counted attempt still counts as the first
+  reloaded.markCompleted("1-2");
+  assert.equal(reloaded.firstWinAttempt("1-2"), 1);
+});
+
+test("progress saved before wins were counted still loads", () => {
+  const progress = createProgressStore(memoryStorage(JSON.stringify({
+    completedIds: ["1-1"], perfectedIds: ["1-1"], attempts: { "1-1": 4 },
+  })));
+  assert.equal(progress.winCount("1-1"), 0);
+  assert.equal(progress.firstWinAttempt("1-1"), null, "not known for old wins");
+  progress.markCompleted("1-1");
+  assert.equal(progress.firstWinAttempt("1-1"), null, "and not invented by a later win");
+  assert.equal(progress.winCount("1-1"), 1);
+  assert.throws(
+    () => createProgressStore(memoryStorage(JSON.stringify({ completedIds: [], wins: { "1-1": "x" } }))),
+    /invalid format/,
+  );
+  assert.throws(
+    () => createProgressStore(memoryStorage(JSON.stringify({ completedIds: [], firstWins: [] }))),
+    /invalid format/,
+  );
+});
