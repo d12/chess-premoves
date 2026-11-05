@@ -559,13 +559,37 @@
   animation: lock-burst 760ms ease-in forwards;
 }
 
-.world-card.is-unlocking .scene {
-  animation: scene-reveal 900ms 420ms ease-out backwards;
+/* The colour floods back by fading out "veils" (unlockWorldCard in main.js): static copies of
+   the locked scene and silhouette laid over the coloured originals. Only opacity and transform
+   animate here, never filter, so the whole reveal runs on the compositor. (Animating filter
+   repainted the scene and piece every frame, and the piece's drop-shadow kept Chrome from
+   compositing it at all: the unlock stuttered.) */
+.world-card.is-unlocking .unlock-veil {
+  pointer-events: none;
 }
 
-.world-card.is-unlocking .landmark img,
-.world-card.is-unlocking .landmark-glyph {
-  animation: silhouette-reveal 900ms 520ms ease-out backwards, landmark-bob 2.6s 1.5s ease-in-out infinite;
+.world-card.is-unlocking .unlock-veil-scene {
+  filter: grayscale(0.85) brightness(0.55);
+  animation: veil-fade 900ms 420ms ease-out forwards;
+}
+
+.world-card.is-unlocking .landmark .unlock-veil-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  filter: brightness(0);
+  opacity: 0.5;
+  animation: veil-fade 600ms 520ms ease-out forwards;
+}
+
+/* the piece pops on its wrapper, so its image keeps transform free for the bob */
+.world-card.is-unlocking .landmark {
+  animation: landmark-pop 900ms 520ms ease-out backwards;
+}
+
+.world-card.is-unlocking .landmark img:not(.unlock-veil),
+.world-card.is-unlocking .landmark-glyph:not(.unlock-veil) {
+  animation: piece-reveal 600ms 520ms ease-out backwards, landmark-bob 2.6s 1.5s ease-in-out infinite;
 }
 
 /* landscape: the five worlds side by side, as tall as the screen allows */
@@ -1430,15 +1454,18 @@
   100% { transform: scale(2.2); opacity: 0; }
 }
 
-@keyframes scene-reveal {
-  from { filter: grayscale(0.85) brightness(0.55); }
-  to { filter: none; }
+@keyframes veil-fade {
+  to { opacity: 0; }
 }
 
-@keyframes silhouette-reveal {
-  from { filter: brightness(0); opacity: 0.5; transform: scale(0.92); }
+@keyframes landmark-pop {
+  from { transform: scale(0.92); }
   60% { transform: scale(1.08); }
-  to { opacity: 1; transform: scale(1); }
+  to { transform: scale(1); }
+}
+
+@keyframes piece-reveal {
+  from { opacity: 0; }
 }
 
 @keyframes card-pop {
