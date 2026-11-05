@@ -310,3 +310,42 @@ test("draws are failures with the reason named, never a separate outcome", async
   assert.equal(drawn.outcome, "defeat");
   assert.match(drawn.message, /Not enough pieces/);
 });
+
+test("snapshots track playback through the queued line, for the move list", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2b2", "c1a1"]);
+  assert.equal(game.snapshot().premovesPlayed, 0);
+  assert.equal(game.snapshot().failedPremove, null);
+  const replies = ["c6b7", "b7a8"];
+  const seen = [];
+  const result = await game.play({ async bestMove() { return replies.shift(); } }, {
+    delayMs: 0,
+    onUpdate(snapshot) {
+      seen.push(`${snapshot.premovesPlayed}${snapshot.lastMove?.color ?? "-"}`);
+    },
+  });
+  // start, then each of our premoves bumps the count; the opponent's replies don't
+  assert.deepEqual(seen, ["0-", "1w", "1b", "2w", "2b", "3w", "3w"]);
+  assert.equal(result.premovesPlayed, 3);
+  assert.equal(result.failedPremove, null);
+});
+
+test("snapshots name the premove an opponent reply made illegal", async () => {
+  const game = createPremoveGame({ id: "capture", fen: "7k/8/8/8/8/8/1r6/R6K w - - 0 1" });
+  game.queueMove({ from: "a1", to: "a2" });
+  game.queueMove({ from: "a2", to: "a3" });
+  const result = await game.play({ async bestMove() { return "b2a2"; } }, { delayMs: 0 });
+  assert.equal(result.outcome, "defeat");
+  assert.equal(result.premovesPlayed, 1);
+  assert.equal(result.failedPremove, 1);
+});
+
+test("a mate before the last premove leaves the rest unplayed", async () => {
+  const game = createPremoveGame(EXAMPLE);
+  queueAll(game, ["e1c1", "d2b2", "c1a1", "a1a2"]);
+  const replies = ["c6b7", "b7a8"];
+  const result = await game.play({ async bestMove() { return replies.shift(); } }, { delayMs: 0 });
+  assert.equal(result.outcome, "victory");
+  assert.equal(result.premovesPlayed, 3);
+  assert.equal(result.premoves.length, 4);
+});

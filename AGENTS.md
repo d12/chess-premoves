@@ -1,6 +1,6 @@
 # Premove — handoff for agents
 
-Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the offline-service-worker PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, and 74 passing tests.
+Read this before changing anything in **d12/chess-premoves**. It covers what the project is, how it is built, how the owner likes to work, and the traps already found. Facts are as of the playback-move-highlight PR (4 Nov 2026): 5 puzzles laid out as 5 worlds × 5 levels, synthesized sound effects and background music, a full-viewport app layout for every screen size, touch dragging, offline play via a service worker, playback highlighting in the move list, and 77 passing tests.
 
 ---
 
@@ -110,6 +110,8 @@ await game.play(engine /* { bestMove(fen) → uci } */, { delayMs, startDelayMs,
 - `message`
 - `perfect`: set on completion
 - `minimumMoves`, `movesUsed`
+- `premovesPlayed`: how many queued premoves have been played so far (0 while planning); the opponent's replies don't count
+- `failedPremove`: index of the premove an opponent reply made illegal, else `null`
 - `fen`: the preview FEN while planning, the real FEN afterwards
 - `premoves`: `[{from,to,promotion,san}]`
 - `lastMove`: `{from,to,san,color}`
@@ -204,6 +206,7 @@ Hand-edited (`ppz` doesn't touch it). An array of worlds in order; each lists th
   - **Perfect:** 160 gold confetti pieces with stars burst from the king, and gold cannons fire from the bottom corners when the result card appears. The card pops in, the ★ spins in and a shimmer crosses the card.
   - **Non-perfect win:** **80** red/blue/green/yellow pieces, half as many. The owner tried a deliberately sad grey fizzle and rejected it as "too depressing": a win is still a win.
   - `prefers-reduced-motion` turns off confetti and motion, leaving only the static glow and tipped king.
+- **Move list during playback** (`premoveStatus`/`renderPremoves`, from `premovesPlayed` and `failedPremove`): the premove just played is lit in the world's accent colour (`is-current`, `aria-current="step"`, a small pop as it lands), earlier ones get a ✓ (`is-played`), later ones are dimmed (`is-upcoming`). At the result the mating move turns gold with a `#` (`is-winning`), a premove that became illegal is red and struck through with ✕ (`is-failed`), and premoves never needed because mate came first are faded (`is-unused`). Each carries a visually hidden status for screen readers. The list scrolls itself (`keepCurrentPremoveVisible`) to keep the current premove in view, in both the horizontal strip and the vertical list.
 - Result cards have Retry, a forward button on wins only (**Next level** inside a world; **Continue** after a world's last level, which goes to its level map for the clear celebration) and **Level map**.
 - Lilita One (self-hosted via `@fontsource/lilita-one`, OFL) is the display face for world names, node numbers, badges and stamps; body text stays Inter.
 
@@ -304,8 +307,8 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 
 ## 7. Testing and verification
 
-- `npm test`: 74 tests in 11 files, about 25 s.
-  - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check
+- `npm test`: 77 tests in 11 files, about 25 s.
+  - `session`: rules, playback, `startDelay`, `matedKing`, perfect, draws as defeats, the escape from a final check, `premovesPlayed`/`failedPremove`
   - `premove-opponent`: refuter vs a chess.js reference on fixture plans; set `PREMOVE_FULL_CHECK=1` for all of them
   - `puzzles`: every level is solvable and beats the opponent
   - `progress`: storage, migration, attempts, stage gating, pre-stage saves
@@ -329,7 +332,7 @@ Full docs: `puzzle-finder/README.md` (setup, hardware, every command, algorithm)
 - **Lines that are known to work** (puzzle N is world N for now; every `solution_uci` in `puzzles.json` is a perfect solve):
   - Puzzle 1 (levels 1-1…1-5): `d2c3 e1b1 c3a1` is the perfect solve.
   - Puzzle 2: `d2c2 c4d4 d4a4` is a non-perfect 3-move win (the minimum is 2).
-  - A losing line: puzzle 1 `d2d7`.
+  - A losing line: puzzle 1 `d2d7`. A line whose 2nd premove becomes illegal: puzzle 1 `c2b1 d2e1`.
   - A full 25-level playthrough of the production build (all perfect) takes about 3 minutes headless.
   - In dev mode you can click any locked level.
 - To check a production build, `npm run build`, copy `dist/` to `<root>/chess-premoves/`, serve `<root>` and load `/chess-premoves/`. This mimics the Pages subpath.

@@ -68,6 +68,10 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
   let outcome = null;
   let message = "";
   let lastMove = null;
+  // Playback progress through the queued line: how many premoves have been played, and
+  // which one (index) turned out illegal, if that's how the line ended.
+  let premovesPlayed = 0;
+  let failedPremove = null;
   // A win is "perfect" when it used no more premoves than the puzzle's minimum
   // (puzzle.number_of_moves, the length of the shortest solution).
   const minimumMoves = Number.isInteger(puzzle.number_of_moves) ? puzzle.number_of_moves : null;
@@ -101,6 +105,8 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       perfect,
       minimumMoves,
       movesUsed: premoves.length,
+      premovesPlayed,
+      failedPremove,
       fen: phase === "planning" ? previewFen() : actual.fen(),
       premoves: premoves.map((move) => ({ ...move })),
       lastMove: lastMove ? { ...lastMove } : null,
@@ -242,6 +248,7 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
       const premove = premoves[index];
       const legalMove = matchingLegalMove(actual, premove);
       if (!legalMove) {
+        failedPremove = index;
         return finish("defeat", "An opponent move made your next premove illegal.");
       }
 
@@ -250,6 +257,7 @@ export function createPremoveGame(puzzle, { playerColor = "w" } = {}) {
         to: legalMove.to,
         ...(legalMove.promotion ? { promotion: legalMove.promotion } : {}),
       });
+      premovesPlayed = index + 1;
       await publishMove(playerMove);
 
       if (actual.isCheckmate()) {
