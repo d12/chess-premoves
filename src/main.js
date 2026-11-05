@@ -1602,8 +1602,7 @@ function playMapEffects() {
       hopToken(element, Number(element.dataset.hopTo), reduced);
     } else if (effect === "unlock-world") {
       sounds.play("unlock-world");
-      element.classList.add("is-unlocking");
-      element.classList.remove("is-locked");
+      unlockWorldCard(element, reduced);
       if (!reduced) {
         element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
         setTimeout(() => {
@@ -1648,6 +1647,34 @@ function playMapEffects() {
       element.classList.add("is-animating");
     }
   }
+}
+
+// A world card goes from locked (grey scene, black silhouette) to open. Animating `filter` to
+// get there repaints the scene and the piece every frame (the piece's drop-shadow stops Chrome
+// from compositing it at all, and drags its bob onto the main thread too), so it stuttered. Instead
+// the locked look stays behind as static "veils" (a grey copy of the scene, a black copy of
+// the piece) over the now-colourful originals, and only their opacity animates, which runs
+// on the compositor. Each veil removes itself when it has faded.
+function unlockWorldCard(card, reduced) {
+  if (!reduced) {
+    const scene = card.querySelector(".scene");
+    const piece = card.querySelector(".landmark img, .landmark-glyph");
+    for (const [original, kind] of [[scene, "scene"], [piece, "piece"]]) {
+      if (!original) continue;
+      const veil = original.cloneNode(true);
+      veil.classList.add("unlock-veil", `unlock-veil-${kind}`);
+      veil.setAttribute("aria-hidden", "true");
+      veil.addEventListener("animationend", () => veil.remove(), { once: true });
+      original.after(veil);
+    }
+  }
+  // The shadow, border and colours change with the class; let them switch in one paint
+  // rather than run the card's hover transition (a repaint per frame for box-shadow).
+  card.style.transition = "none";
+  card.classList.add("is-unlocking");
+  card.classList.remove("is-locked");
+  void getComputedStyle(card).boxShadow; // apply the new style before transitions come back
+  card.style.removeProperty("transition");
 }
 
 // The trail's stroke doesn't scale with the stretched map, so its dashes are measured in
