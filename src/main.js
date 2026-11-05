@@ -523,6 +523,8 @@ function renderStage() {
   const freshUnlock = state.fresh.unlockedLevel && getLevel(state.fresh.unlockedLevel).stageId === stage.id
     ? state.fresh.unlockedLevel : null;
   const hopFrom = freshUnlock ? state.fresh.hopFrom : null;
+  // A world the last win cleared is drawn as it was (flag down, no stamp) and playMapEffects
+  // raises the flag and lands the stamp once the screen transition has finished.
   const freshClear = state.fresh.clearedStage === stage.id;
   if (freshUnlock) {
     state.fresh.unlockedLevel = null;
@@ -585,7 +587,7 @@ function renderStage() {
         ${renderTrail(stage, "tall", freshIndex)}
         <ol class="level-nodes">${stage.levels.map((level, index) => renderLevelNode(level, index, { freshUnlock })).join("")}</ol>
         <span class="map-pin goal-pin" style="${mapPosition(stage.levels.length - 1)}" aria-hidden="true">
-          <span class="goal-flag ${progress.cleared ? "is-raised" : ""}" ${freshClear ? 'data-fresh="raise-flag"' : ""}>
+          <span class="goal-flag ${progress.cleared && !freshClear ? "is-raised" : ""}" ${freshClear ? 'data-fresh="raise-flag"' : ""}>
             <span class="flag-pole"></span><span class="flag-cloth">★</span>
           </span>
         </span>
