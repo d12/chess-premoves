@@ -61,24 +61,24 @@ completed ones in the browser (`perfectedIds`); progress saved before this featu
 
 ## Puzzles
 
-Puzzles live in `src/game/puzzles.json` and are numbered 1..N; each unlocks when the one
-before it is completed. Manage them with the generator in `puzzle-finder/`:
+Puzzles live in `src/game/puzzles.json`, one per level: 25 entries with the ids `1-1` …
+`5-5` (world-level, in play order). Each level unlocks when the one before it is completed.
+Manage them with the generator in `puzzle-finder/`:
 
 ```sh
 cd puzzle-finder
-./ppz app list                                   # what the app has
-./ppz app add "FEN"                              # append as the next puzzle
-./ppz app add "FEN" --number 4                   # replace puzzle 4 (or add it if 4 is next)
-./ppz app add "FEN" --number 4 --insert          # insert at 4 and shift the rest up
-./ppz app add --from-db 7 --title "Corner squeeze" # puzzle 7 from `ppz db list`
-./ppz app remove --number 4                      # remove and renumber
+./ppz app list                                        # every level; repeats are marked
+./ppz app add "FEN" --level 3-2                       # put this puzzle in world 3, level 2
+./ppz app add --from-db 7 --level 1-4 --title "Corner squeeze"   # puzzle 7 from `ppz db list`
 ```
 
-`add` solves and verifies the position, stores the shortest solution, and generates a title
-and description unless you pass `--title` / `--description`. `npm test` then checks every
-puzzle in the file: numbering, that its solution can be entered on the planning board, and
-that it beats the opponent in a real game. Completion is stored per puzzle number in the
-browser, so replacing or inserting puzzles shifts what players see as completed.
+Every world-level always has a puzzle, so `add` replaces whatever is at that level (it asks
+first; `--yes` skips that). It solves and verifies the position, stores the shortest
+solution, and generates a title and description unless you pass `--title` /
+`--description`. `npm test` then checks every puzzle in the file: that every world-level is
+there exactly once, that its solution can be entered on the planning board, and that it
+beats the opponent in a real game. Completion is stored per world-level in the browser, so
+replacing a level's puzzle keeps that level completed for returning players.
 
 The `puzzle-finder/` directory contains the standalone finder, its native engine and
 supporting files. Its `premove_puzzles/` subdirectory is the Python package used by `ppz`;

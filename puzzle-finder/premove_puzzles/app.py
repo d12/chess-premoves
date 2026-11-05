@@ -1,13 +1,15 @@
 """The game's puzzle list (src/game/puzzles.json in the app repo).
 
-Puzzles are numbered 1..N and unlock in order, so numbers are always kept contiguous:
-adding at an existing number replaces that puzzle (or shifts the rest with insert=True),
-adding at N+1 appends, and removing renumbers everything after it.
+There is one entry per level, in play order, and each entry's id is its world-level
+("3-2" is the second level of world 3). Every world-level always has a puzzle, so the
+file's ids are fixed: adding a puzzle at a world-level replaces whatever is there, and
+the ids never shift or renumber.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from .quality import canonical_key
@@ -43,6 +45,15 @@ def default_title(material: str) -> str:
     return title[0].upper() + title[1:]
 
 
+_LEVEL_ID = re.compile(r"([1-9]\d*)-([1-9]\d*)")
+
+
+def parse_level(level_id: str) -> tuple[int, int] | None:
+    """'3-2' -> (3, 2); None if it isn't a world-level id."""
+    m = _LEVEL_ID.fullmatch(str(level_id).strip())
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 def default_description(n: int) -> str:
     count = NUMBER_WORDS[n] if n < len(NUMBER_WORDS) else str(n)
     return f"Plan the forced premove mate in {count}, allowing for every legal Black reply."
@@ -61,11 +72,33 @@ class AppPuzzles:
         data = json.loads(self.path.read_text())
         if not isinstance(data, list):
             raise ValueError(f"{self.path} must contain a JSON array")
+        self.check_layout(data)
         return data
 
+    def check_layout(self, puzzles: list[dict]):
+        """Ids must be world-levels in play order: 1-1, 1-2, …, 2-1, … with no gaps."""
+        expected_world, expected_level = 1, 1
+        for p in puzzles:
+            slot = parse_level(p.get("id", ""))
+            if slot is None:
+                raise ValueError(f"{self.path}: puzzle id {p.get('id')!r} is not a world-level like '3-2'")
+            if slot == (expected_world + 1, 1) and expected_level > 1:
+                expected_world, expected_level = slot
+            if slot != (expected_world, expected_level):
+                raise ValueError(f"{self.path}: expected level {expected_world}-{expected_level} "
+                                 f"but found {p['id']}; every world-level needs exactly one puzzle, in order")
+            expected_level += 1
+
+    @staticmethod
+    def index_of(puzzles: list[dict], level_id: str) -> int | None:
+        slot = parse_level(level_id)
+        for i, p in enumerate(puzzles):
+            if slot is not None and parse_level(p["id"]) == slot:
+                return i
+        return None
+
     def save(self, puzzles: list[dict]):
-        for i, p in enumerate(puzzles):  # keep ids contiguous: "1".."N"
-            p["id"] = str(i + 1)
+        self.check_layout(puzzles)
         ordered = [{"id": p["id"], **{k: v for k, v in p.items() if k != "id"}} for p in puzzles]
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(ordered, indent=2) + "\n")
@@ -83,9 +116,10 @@ class AppPuzzles:
             "solution_uci": analysis["plan_uci"],
         }
 
-    def duplicate_of(self, puzzles: list[dict], fen: str, ignore_index: int | None = None) -> int | None:
+    def duplicate_of(self, puzzles: list[dict], fen: str, ignore_index: int | None = None) -> str | None:
+        """The world-level of another level with this position (or a mirror image), if any."""
         key = canonical_key(fen)
         for i, p in enumerate(puzzles):
             if i != ignore_index and canonical_key(p["fen"]) == key:
-                return i + 1
+                return p["id"]
         return None

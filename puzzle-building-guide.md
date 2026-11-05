@@ -20,7 +20,7 @@ In every new Terminal window, run `source .venv/bin/activate` again first.
 | file | what it is | written by |
 |---|---|---|
 | `puzzle-finder/puzzles.json` | your **shortlist** of puzzles you accepted in review | `ppz review`, `ppz add` |
-| `src/game/puzzles.json` | the **game's** levels, numbered 1..N | `ppz app` only |
+| `src/game/puzzles.json` | the **game's** levels, one per world-level (`1-1` … `5-5`) | `ppz app` only |
 
 Nothing reaches the game until you run `ppz app add`.
 
@@ -72,10 +72,10 @@ Use `./ppz review --show-solutions` to see solutions straight away.
 ### 3. Add shortlisted puzzles to the game
 
 ```sh
-./ppz db list                                   # numbered shortlist
-./ppz app add --from-db 3                       # shortlist #3 becomes the next level
-./ppz app add --from-db 5 --number 2 --yes      # shortlist #5 replaces level 2
-./ppz app add --from-db 7 --title "Corner squeeze"
+./ppz db list                                       # numbered shortlist
+./ppz app add --from-db 3 --level 2-1               # shortlist #3 becomes world 2, level 1
+./ppz app add --from-db 5 --level 3-2 --yes         # ...without the "replace?" question
+./ppz app add --from-db 7 --level 5-5 --title "Corner squeeze"
 ```
 
 ---
@@ -87,7 +87,7 @@ analysis board you can set up a position and copy its FEN.
 
 ```sh
 ./ppz solve "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1"      # check it first: length, solution, score
-./ppz app add "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1"    # add it as the next level
+./ppz app add "8/8/2k5/8/8/8/3Q4/4R2K w - - 0 1" --level 3-2   # make it world 3, level 2
 ```
 
 `solve` tells you whether there is a premove mate, how many moves it needs, and the
@@ -101,29 +101,30 @@ To keep a position in your shortlist without adding it to the game yet:
 ## Managing the game's levels
 
 ```sh
-./ppz app list                              # all levels
+./ppz app list                              # all 25 levels; "(same as 1-1)" marks a repeat
 ./ppz app list --solutions                  # ...with solutions
-./ppz app add "FEN" --number 4              # replace level 4 (asks first); if 4 is next, adds it
-./ppz app add "FEN" --number 4 --insert     # insert at 4 and shift later levels up
-./ppz app remove --number 4                 # remove level 4 and renumber the rest
+./ppz app add "FEN" --level 4-3             # put a puzzle in world 4, level 3 (asks first)
 ```
 
-- Levels are numbered 1..N and unlock in order, so gaps aren't allowed. Adding at N+1
-  appends; anything higher is refused.
+- There are 5 worlds × 5 levels, and every world-level always has exactly one puzzle, with
+  its world-level (`4-3`) as its id. `add --level` replaces whatever is at that level, so
+  levels never shift or renumber, and there is no `remove`.
+- To fill the game with different puzzles, run `ppz app list` and replace the levels marked
+  "(same as …)".
 - `add` solves and verifies the position, stores the shortest solution, and generates a
   title (e.g. "Rook and bishop vs king") and description unless you pass `--title` /
   `--description`.
-- It refuses a position that is already a level, including mirror images
+- It refuses a position that is already at another level, including mirror images
   (`--allow-duplicate` overrides).
-- `--yes` skips the confirmation prompts (needed when not running interactively).
-- Players' progress is saved by level number, so replacing or inserting levels shifts what
-  returning players see as completed.
+- `--yes` skips the confirmation prompt (needed when not running interactively).
+- Players' progress is saved by world-level, so replacing a level's puzzle keeps it
+  completed for returning players.
 
 ## Check, play, ship
 
 ```sh
 cd ..
-npm test              # checks every level: numbering, the solution can be entered, it beats the opponent
+npm test              # checks every level: all 25 world-levels present, the solution can be entered, it beats the opponent
 npm run dev           # play it yourself in the browser
 git add src/game/puzzles.json && git commit -m "Add puzzles" && git push
 ```
@@ -136,4 +137,4 @@ git add src/game/puzzles.json && git commit -m "Add puzzles" && git push
 | "Stockfish failed N time(s)" | the run carried on without it; the positions are in `stockfish-errors.log` |
 | generation is slow | run `./ppz tables build`; positions with pawns (including `--min-pieces`) can't use the tables and are slower |
 | `app add` says "not a valid puzzle" | there is no forced premove mate within `--max-moves` (default 10), or it's Black to move |
-| `npm test` fails on a level | its message names the level number; fix or remove it with `ppz app` |
+| `npm test` fails on a level | its message names the level (e.g. `3-2`); replace it with `ppz app add ... --level 3-2` |
