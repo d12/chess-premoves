@@ -240,18 +240,20 @@ button.star-counter.has-new::after {
     display: flex;
   }
 
+  /* a narrow badges column (smaller windows): names only */
+  @container panel (max-width: 380px) {
+    .stats-badges .badge-how {
+      display: none;
+    }
+  }
+
   /* cqw here is the column's width (each panel is an inline-size container) */
   .stats-overview .rank-card {
     --crest: clamp(108px, min(62cqw, 23cqh), 210px);
   }
 }
 
-/* a narrow badges column (three-column layout on smaller windows): names only */
-@container panel (max-width: 380px) {
-  .stats-badges .badge-how {
-    display: none;
-  }
-}
+
 
 /* ---------- Overview: the rank card and the counters ---------- */
 
