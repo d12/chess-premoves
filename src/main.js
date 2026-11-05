@@ -22,6 +22,7 @@ import "./style.css";
 import "./ui/worlds.css";
 import "./ui/stats.css";
 import "./ui/panel.css";
+import "./ui/coach.css";
 import "./ui/tutorial.css";
 
 const app = document.querySelector("#app");
@@ -69,7 +70,7 @@ const state = {
   progressStore: null,
   tutorialStore: null, // whether the tutorial is done (it must be, before the worlds open)
   tutorial: false, // the puzzle screen is playing the tutorial (state.level is TUTORIAL_LEVEL)
-  tutorialPanelHeight: null, // px the tutorial's planning panel needs (see fitTutorialPanel)
+  coachPanelHeight: null, // px the planning panel needs when it has a coach (see fitCoachPanel)
   tutorialIntro: false, // the tutorial's welcome card is showing over the board
   stage: null, // the stage whose level map is open (screen "stage")
   level: null, // the level being played (screen "puzzle"); state.puzzle is level.puzzle
@@ -1174,12 +1175,13 @@ function renderPuzzle() {
   const moveCount = snapshot.premoves.length;
 
   const stage = getStage(state.level.stageId);
-  const coach = !state.tutorial || snapshot.phase === "complete" || snapshot.phase === "error" ? null
-    : planning ? step.coach : PLAYING_COACH;
+  const coach = state.tutorial
+    ? (snapshot.phase === "complete" || snapshot.phase === "error" ? null : planning ? step.coach : PLAYING_COACH)
+    : (planning ? levelCoach(stage) : null);
   return `
     ${renderHeader()}
-    <main class="puzzle-screen ${state.tutorial ? "is-tutorial" : ""}" data-theme="${stage.theme}">
-      <div class="game-layout" ${state.tutorial && state.tutorialPanelHeight ? `style="--tutorial-panel: ${state.tutorialPanelHeight}px"` : ""}>
+    <main class="puzzle-screen ${state.tutorial ? "is-tutorial" : ""} ${hasCoach() ? "has-coach" : ""}" data-theme="${stage.theme}">
+      <div class="game-layout" ${hasCoach() && state.coachPanelHeight ? `style="--coach-panel: ${state.coachPanelHeight}px"` : ""}>
         ${state.tutorial ? renderTutorialHeading() : `<div class="puzzle-heading">
           <button class="back-button" type="button" data-action="open-stage" data-stage-id="${stage.id}" aria-label="Back to ${escapeHTML(stage.name)}" ${snapshot.phase === "playing" ? "disabled" : ""}>
             <span aria-hidden="true">←</span> <span class="back-label">${escapeHTML(stage.name)}</span>
@@ -1259,39 +1261,60 @@ function renderTutorialHeading() {
   `;
 }
 
-// The coach: a pawn with a speech bubble at the top of the panel, saying what to do next. A
-// nudge (a move the tutorial didn't ask for) takes the title's place. Invisible copies of every
-// title and text the coach can show sit under the real ones (.coach-sizer), so the bubble is
-// always as tall as its longest message: the panel keeps its height and the board doesn't jump.
-function renderCoach({ title, text }, nudge = "") {
-  const image = pieceImage("w", "p");
+// Each world's mascot narrates its levels (the tutorial's pawn is World 1's).
+const NARRATORS = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
+// The longest nudge a level shows, so the bubble keeps room for it (see renderCoach).
+const LEVEL_NUDGE_SIZER = "That move is not legal from e2.";
+
+/** Whether the puzzle screen has a coach while planning: the tutorial, or a level with a message. */
+function hasCoach() {
+  return state.screen === "puzzle" && (state.tutorial || Boolean(state.puzzle?.description?.trim()));
+}
+
+/** A level's coach: the world's mascot saying the level's description. */
+function levelCoach(stage) {
+  const text = state.puzzle.description?.trim();
+  if (!text) {
+    return null;
+  }
+  const narrator = NARRATORS[stage.piece] ?? "Coach";
+  return { title: narrator, text, piece: stage.piece, titles: [narrator, LEVEL_NUDGE_SIZER], texts: [], live: false };
+}
+
+// The coach: a piece in a round frame with a speech bubble at the top of the panel. The
+// tutorial's pawn says what to do next; on a level, the world's mascot says the level's
+// message. A nudge (a move that isn't allowed) takes the title's place. Invisible copies of
+// every title and text the coach can show sit under the real ones (.coach-sizer), so the
+// bubble keeps one height: the panel keeps its size and the board doesn't jump.
+function renderCoach({ title, text, piece = "p", titles = COACH_TITLES, texts = COACH_TEXTS, live = true }, nudge = "") {
+  const image = pieceImage("w", piece);
   const sizers = (lines, className) => lines
     .map((line) => `<p class="${className} coach-sizer" aria-hidden="true">${escapeHTML(line)}</p>`).join("");
   return `
-    <div class="coach" role="status" aria-live="polite">
-      <span class="coach-avatar" aria-hidden="true">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols.w.p}</span>
+    <div class="coach" ${live ? 'role="status" aria-live="polite"' : ""}>
+      <span class="coach-avatar" aria-hidden="true">${image ? `<img src="${escapeHTML(image)}" alt="" draggable="false" />` : pieceSymbols.w[piece]}</span>
       <div class="coach-bubble">
         <div class="coach-stack">
           <p class="coach-title ${nudge ? "is-nudge" : ""}" ${nudge ? 'role="alert"' : ""}>${escapeHTML(nudge || title)}</p>
-          ${sizers(COACH_TITLES, "coach-title")}
+          ${sizers(titles, "coach-title")}
         </div>
         <div class="coach-stack">
           <p class="coach-text">${escapeHTML(text)}</p>
-          ${sizers(COACH_TEXTS, "coach-text")}
+          ${sizers(texts, "coach-text")}
         </div>
       </div>
     </div>
   `;
 }
 
-// The tutorial's panel (coach, tray, Done/Undo) is taller than a level's, and on portrait
-// screens the board gets whatever height the panel's row leaves. So the tutorial reserves
-// exactly what its planning panel needs (--tutorial-panel, read by ui/tutorial.css): the coach
-// never changes height, and the playback and result panels are smaller, so the board keeps
-// one size from the first step to the result. Measured after each planning render and on
-// resize; the panel is aligned to the end of its row, so its height is its content's.
-function fitTutorialPanel() {
-  if (state.screen !== "puzzle" || !state.tutorial || state.snapshot?.phase !== "planning") {
+// With a coach, the panel is taller than without one, and on portrait screens the board gets
+// whatever height the panel's row leaves. So that row reserves exactly what the planning panel
+// needs (--coach-panel, read by ui/coach.css): the coach never changes height, and the
+// playback and result panels are smaller, so the board keeps one size from planning to the
+// result. Measured after each planning render and on resize; the panel is aligned to the end
+// of its row, so its height is its content's.
+function fitCoachPanel() {
+  if (!hasCoach() || state.snapshot?.phase !== "planning") {
     return;
   }
   const panel = app.querySelector(".control-panel");
@@ -1300,9 +1323,9 @@ function fitTutorialPanel() {
     return;
   }
   const height = Math.ceil(panel.getBoundingClientRect().height);
-  if (height > 0 && height !== state.tutorialPanelHeight) {
-    state.tutorialPanelHeight = height;
-    layout.style.setProperty("--tutorial-panel", `${height}px`);
+  if (height > 0 && height !== state.coachPanelHeight) {
+    state.coachPanelHeight = height;
+    layout.style.setProperty("--coach-panel", `${height}px`);
   }
 }
 
@@ -1419,7 +1442,7 @@ function render() {
   } else if (state.screen === "sounds" && import.meta.env.DEV) {
     app.innerHTML = renderSoundBoard();
   }
-  fitTutorialPanel();
+  fitCoachPanel();
   if (state.tutorialIntro && state.screen === "puzzle") {
     app.querySelector(".tutorial-start")?.focus({ preventScroll: true }); // a dialog takes focus
   }
@@ -1520,8 +1543,8 @@ function goBack() {
   }
 }
 
-// Rotating or resizing changes how the coach wraps, so the tutorial re-fits its panel.
-window.addEventListener("resize", fitTutorialPanel);
+// Rotating or resizing changes how the coach wraps, so the panel is re-fitted.
+window.addEventListener("resize", fitCoachPanel);
 
 window.addEventListener("popstate", () => {
   if (ignoreNextPop) {

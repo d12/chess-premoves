@@ -114,6 +114,9 @@ To keep a position in your shortlist without adding it to the game yet:
 - `add` solves and verifies the position, stores the shortest solution, and generates a
   title (e.g. "Rook and bishop vs king") and description unless you pass `--title` /
   `--description`.
+- The **description is the level's message**: the world's mascot says it in a speech bubble
+  while the player plans. Use it for a line of story or a gentle hint, e.g.
+  `--description "Kings hate corners. Can you herd this one into a1?"`.
 - It refuses a position that is already at another level, including mirror images
   (`--allow-duplicate` overrides).
 - `--yes` skips the confirmation prompt (needed when not running interactively).
