@@ -95,32 +95,36 @@
   },
   {
     "id": "2-2",
-    "title": "Be careful",
-    "description": "Plan the forced premove mate in two, allowing for every legal Black reply.",
-    "fen": "4R3/8/8/8/2R5/8/k2K4/8 w - - 0 1",
-    "number_of_moves": 2,
+    "title": "Rook, bishop, knight and two pawns vs king and bishop and two pawns",
+    "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
+    "fen": "8/p7/1P5p/7P/8/1B2b1K1/6R1/1k1N4 w - - 0 1",
+    "number_of_moves": 3,
     "solution": [
-      "Kc2",
-      "Ra8"
+      "Nxe3",
+      "Nc4",
+      "Rg1"
     ],
     "solution_uci": [
-      "d2c2",
-      "e8a8"
+      "d1e3",
+      "e3c4",
+      "g2g1"
     ]
   },
   {
     "id": "2-3",
-    "title": "Be careful",
-    "description": "Plan the forced premove mate in two, allowing for every legal Black reply.",
-    "fen": "4R3/8/8/8/2R5/8/k2K4/8 w - - 0 1",
-    "number_of_moves": 2,
+    "title": "Rook, bishop and two knights vs king and two pawns",
+    "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
+    "fen": "8/p1B1p3/8/8/7K/7N/6k1/4R2N w - - 0 1",
+    "number_of_moves": 3,
     "solution": [
-      "Kc2",
-      "Ra8"
+      "Kg4",
+      "Rg1",
+      "Bxe5"
     ],
     "solution_uci": [
-      "d2c2",
-      "e8a8"
+      "h4g4",
+      "e1g1",
+      "c7e5"
     ]
   },
   {
