@@ -961,11 +961,13 @@ function premovePiece(move) {
   return "KQRBN".includes(letter) ? letter.toLowerCase() : "p";
 }
 
+// Pieces show just their destination (the image says which piece moved); castling and
+// pawn moves show their SAN, so a pawn capture keeps the file it came from (hxg8=R, not g8=R).
 function premoveLabel(move) {
-  if (move.san.startsWith("O-O")) {
+  if (move.san.startsWith("O-O") || premovePiece(move) === "p") {
     return move.san.replace(/[+#]/g, "");
   }
-  return `${move.to}${move.promotion ? `=${move.promotion.toUpperCase()}` : ""}`;
+  return move.to;
 }
 
 function renderTrayTile(move, index, { par, last, planning, playerColor, fresh }) {
