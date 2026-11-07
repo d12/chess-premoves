@@ -145,13 +145,15 @@
 
 .tray-tile {
   position: relative;
-  width: var(--tile-w);
+  /* long labels (a pawn capture-promotion, "hxg8=Q#") widen the tile instead of overflowing */
+  width: max-content;
+  min-width: var(--tile-w);
   height: var(--tile-h);
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   justify-items: center;
   align-items: center;
-  padding: 6px 2px 6px;
+  padding: 6px 4px 6px;
   border: 2px solid #dfe5da;
   border-radius: 13px;
   color: #23301e;
