@@ -129,18 +129,16 @@
   },
   {
     "id": "2-4",
-    "title": "Rook, bishop and pawn vs king and knight and pawn",
-    "description": "Plan the forced premove mate in three, allowing for every legal Black reply.",
-    "fen": "8/1B2p3/8/8/4R3/k3n3/2KP4/8 w - - 0 1",
-    "number_of_moves": 3,
+    "title": "Rook, bishop, knight and pawn vs king and bishop and two pawns",
+    "description": "Plan the forced premove mate in two, allowing for every legal Black reply.",
+    "fen": "1N4b1/1B5P/8/4p3/4R3/k1p5/2K5/8 w - - 0 1",
+    "number_of_moves": 2,
     "solution": [
-      "dxe3",
-      "Bc6",
+      "hxg8=R",
       "Ra4"
     ],
     "solution_uci": [
-      "d2e3",
-      "b7c6",
+      "h7g8r",
       "e4a4"
     ]
   },
